@@ -1,6 +1,0 @@
-Standard Operating Procedure SOP-114: Unit-2 Valve Specifications.
-The designated main line feed contains Valve V-204.
-Valve V-204 nominal operating pressure is 4.0 bar.
-Valve V-204 rated tolerance is ±0.1 bar per SOP-114. Any reading between 3.9 bar and 4.1 bar is normal.
-Emergency shutdown trigger: Pressure exceeding 5.0 bar.
-Inspection frequency: Bi-weekly by certified technician.
