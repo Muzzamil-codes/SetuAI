@@ -1,0 +1,13 @@
+SETU Approval Note | Ref: SETU-TEST-EXT
+==================================================
+Subject: uploads/scan_001.jpg
+
+Findings:
+  1. Valve Tag: V-204 [Normal] (Source: VLM/OCR Extraction)
+  2. Pressure Reading: 4.05 bar [Normal] (Source: VLM/OCR Extraction)
+  3. Inspection Date: 2024-03-15 [Normal] (Source: VLM/OCR Extraction)
+  4. Inspector: R. Kumar [Normal] (Source: VLM/OCR Extraction)
+  5. Condition: Normal [Normal] (Source: VLM/OCR Extraction)
+  6. Next Inspection: 2024-03-29 [Normal] (Source: VLM/OCR Extraction)
+
+Recommendation: All parameters within limits.

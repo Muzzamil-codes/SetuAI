@@ -1,0 +1,9 @@
+SETU Approval Note | Ref: SETU-TEST-DRA
+==================================================
+Subject: Draft an approval note for Unit-2 Valve V-204 inspection
+
+Findings:
+  1. Reference 1: Valve V-204 rated tolerance is ±0.1 bar per SOP-114. [Normal] (Source: SOP-114.txt)
+  2. Reference 2: Emergency shutdown trigger: Pressure exceeding 5.0 bar. [Normal] (Source: SOP-114.txt)
+
+Recommendation: All parameters within limits.

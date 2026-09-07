@@ -1,0 +1,3 @@
+Verification Report
+Verify pressure reading 4.05 bar against tolerance of 4.0
+Result: {'passed': True, 'computed_value': 4.05, 'expected': 4.0, 'deviation': 0.05, 'tolerance': 0.1, 'unit': 'bar'}

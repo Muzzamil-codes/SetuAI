@@ -1,0 +1,238 @@
+"""
+Setu Agent Graph — LangGraph state machine with SimpleGraph fallback.
+
+Defines the agentic pipeline: classify → plan → tool_call → verify → generate
+with a conditional retry loop when verification fails (max 2 retries).
+
+Exposes `run_agent(task_input_dict) -> AsyncGenerator[dict, None]` for the
+backend to consume. Each yielded dict is a TraceEvent-shaped dict.
+"""
+from orchestrator.agent_graph.state import AgentState
+from orchestrator.classifier.infer import classify_task, select_model
+from orchestrator.agent_graph.nodes.plan import plan_node
+from orchestrator.agent_graph.nodes.tool_call import tool_call_node
+from orchestrator.agent_graph.nodes.verify import verify_node
+from orchestrator.agent_graph.nodes.generate import generate_node
+from datetime import datetime, timezone
+import traceback
+from typing import AsyncGenerator
+
+
+class SimpleGraph:
+    """Lightweight state machine that replaces LangGraph when it's not installed.
+
+    Walks nodes in sequence, following edges and conditional edges, and
+    yields every *new* trace event produced by each node — not just the last.
+    """
+
+    def __init__(self):
+        self.nodes: dict[str, callable] = {}
+        self.edges: dict[str, str] = {}
+        self.conditional_edges: dict[str, tuple] = {}
+        self._entry_point: str | None = None
+
+    def add_node(self, name: str, func: callable):
+        self.nodes[name] = func
+        if self._entry_point is None:
+            self._entry_point = name
+
+    def add_edge(self, from_node: str, to_node: str):
+        self.edges[from_node] = to_node
+
+    def add_conditional_edge(self, from_node: str, condition_func: callable,
+                             mapping: dict[str, str]):
+        self.conditional_edges[from_node] = (condition_func, mapping)
+
+    def set_entry_point(self, name: str):
+        self._entry_point = name
+
+    async def run(self, initial_state: AgentState) -> AsyncGenerator[dict, None]:
+        state = dict(initial_state)  # mutable working copy
+        current_node = self._entry_point or "classify"
+        events_yielded = 0  # track how many events we've already sent
+
+        while current_node and current_node != "END":
+            func = self.nodes.get(current_node)
+            if not func:
+                break
+
+            try:
+                updates = func(state)
+                state.update(updates)
+
+                # Yield every NEW trace event (not just the last one)
+                all_events = state.get("trace_events", [])
+                while events_yielded < len(all_events):
+                    yield all_events[events_yielded]
+                    events_yielded += 1
+
+            except Exception as e:
+                yield {
+                    "task_id": state.get("task_id", "unknown"),
+                    "step": "error",
+                    "payload": {"error": str(e),
+                                "traceback": traceback.format_exc()},
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                break
+
+            # Determine next node
+            if current_node in self.conditional_edges:
+                cond_func, mapping = self.conditional_edges[current_node]
+                next_key = cond_func(state)
+                current_node = mapping.get(next_key, "END")
+            else:
+                current_node = self.edges.get(current_node, "END")
+
+
+# ---------------------------------------------------------------------------
+# Classify node (lives here rather than in nodes/ because it directly calls
+# the classifier and populates the top-level routing fields)
+# ---------------------------------------------------------------------------
+
+def classify_node(state: AgentState) -> dict:
+    """Classifies the incoming task and selects the specialist model."""
+    task_input = state.get("task_input", {})
+    task_id = state.get("task_id", "unknown")
+    content = task_input.get("content", "")
+    modality = task_input.get("modality", "text")
+
+    task_type = classify_task(content, modality)
+    model = select_model(task_type)
+
+    trace_events = list(state.get("trace_events", []))
+    trace_events.append({
+        "task_id": task_id,
+        "step": "classify",
+        "payload": {
+            "task_type": task_type,
+            "confidence": 0.95,
+            "selected_model": model
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+
+    return {
+        "task_type": task_type,
+        "selected_model": model,
+        "trace_events": trace_events
+    }
+
+
+# ---------------------------------------------------------------------------
+# Graph construction
+# ---------------------------------------------------------------------------
+
+try:
+    from langgraph.graph import StateGraph, END
+    HAS_LANGGRAPH = True
+except ImportError:
+    HAS_LANGGRAPH = False
+    END = "END"
+
+
+def build_graph():
+    """Builds the agent state graph using LangGraph or the SimpleGraph fallback."""
+    if HAS_LANGGRAPH:
+        workflow = StateGraph(AgentState)
+    else:
+        workflow = SimpleGraph()
+
+    workflow.add_node("classify", classify_node)
+    workflow.add_node("plan", plan_node)
+    workflow.add_node("tool_call", tool_call_node)
+    workflow.add_node("verify", verify_node)
+    workflow.add_node("generate", generate_node)
+
+    workflow.add_edge("classify", "plan")
+    workflow.add_edge("plan", "tool_call")
+    workflow.add_edge("tool_call", "verify")
+
+    def verify_condition(state: AgentState) -> str:
+        status = state.get("verification_status")
+        retries = state.get("retry_count", 0)
+        max_retries = state.get("max_retries", 2)
+
+        if status == "passed":
+            return "passed"
+        elif status == "failed" and retries < max_retries:
+            return "retry"
+        else:
+            return "exhausted"
+
+    workflow.add_conditional_edge(
+        "verify",
+        verify_condition,
+        {
+            "passed": "generate",
+            "retry": "plan",
+            "exhausted": "generate"
+        }
+    )
+
+    workflow.add_edge("generate", END)
+
+    if HAS_LANGGRAPH:
+        return workflow.compile()
+    return workflow
+
+
+# ---------------------------------------------------------------------------
+# Public API — the single function the backend imports
+# ---------------------------------------------------------------------------
+
+async def run_agent(task_input_dict: dict) -> AsyncGenerator[dict, None]:
+    """Run the full agent pipeline for a task.
+
+    Yields TraceEvent-shaped dicts as the agent progresses through
+    classify → plan → tool_call → verify → generate.
+
+    Args:
+        task_input_dict: A dict matching the TaskInput schema:
+            {task_id, modality, content, context}
+
+    Yields:
+        dict with keys: task_id, step, payload, timestamp
+    """
+    initial_state: AgentState = {
+        "task_id": task_input_dict.get(
+            "task_id",
+            f"task_{int(datetime.now(timezone.utc).timestamp())}"
+        ),
+        "task_input": task_input_dict,
+        "task_type": "",
+        "modality": task_input_dict.get("modality", "text"),
+        "selected_model": {},
+        "messages": [],
+        "plan": "",
+        "tool_calls": [],
+        "tool_results": [],
+        "verification_status": "pending",
+        "retry_count": 0,
+        "max_retries": 2,
+        "artifacts": [],
+        "trace_events": [],
+        "error": None,
+        "final_summary": ""
+    }
+
+    graph = build_graph()
+
+    try:
+        if HAS_LANGGRAPH:
+            for output in graph.stream(initial_state):
+                for _node_name, state_update in output.items():
+                    events = state_update.get("trace_events", [])
+                    for event in events:
+                        yield event
+        else:
+            async for event in graph.run(initial_state):
+                yield event
+    except Exception as e:
+        yield {
+            "task_id": initial_state["task_id"],
+            "step": "error",
+            "payload": {"error": str(e),
+                        "traceback": traceback.format_exc()},
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }

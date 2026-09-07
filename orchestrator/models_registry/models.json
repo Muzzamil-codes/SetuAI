@@ -1,0 +1,5 @@
+[
+  {"name": "qwen2.5-coder-7b-instruct", "modality": "text", "role": "codegen", "quant": "awq-4bit", "vram_mb": 6500, "endpoint": "http://localhost:8001/v1"},
+  {"name": "deepseek-r1-distill-qwen-8b", "modality": "text", "role": "reasoning", "quant": "gguf-q4_k_m", "vram_mb": 5800, "endpoint": "http://localhost:8002/v1"},
+  {"name": "qwen2-vl-7b-instruct", "modality": "vision", "role": "extraction", "quant": "awq-4bit", "vram_mb": 7200, "endpoint": "http://localhost:8003/v1"}
+]
