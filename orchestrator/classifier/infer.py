@@ -47,10 +47,10 @@ def classify_task(content: str, modality: str) -> str:
             raise RuntimeError("Model not loaded")
             
         categories = {
-            "codegen": "write python code script sql implement debug function software",
-            "numeric_verify": "verify calculate math tolerance pressure number computation",
-            "extraction": "extract fields from document image scan OCR structured data",
-            "drafting": "draft approval note document email report summarize text"
+            "codegen": "write code program function algorithm implement debug software python java C++ javascript rust dynamic programming sorting",
+            "numeric_verify": "verify calculate math tolerance pressure number computation check numeric value formula",
+            "extraction": "extract fields from scanned document image OCR structured data table parse invoice",
+            "drafting": "draft approval note write document email report summarize compose letter memo"
         }
         
         best_cat = "drafting"
@@ -66,16 +66,23 @@ def classify_task(content: str, modality: str) -> str:
             if score > best_score:
                 best_score = score
                 best_cat = cat
-                
+
+        print(f"[Classifier] ModernBERT result: '{best_cat}' (score: {best_score:.4f}) for: '{content[:80]}'")
         return best_cat
     except Exception as e:
         print(f"ModernBERT classification failed, falling back to heuristics: {e}")
         # Fallback heuristics
         content_lower = content.lower()
-        if any(kw in content_lower for kw in ["python", "function", "script", "code", "debug"]):
+        if any(kw in content_lower for kw in [
+            "python", "function", "script", "code", "debug", "program",
+            "algorithm", "c++", "java", "implement", "coding", "dynamic programming",
+            "sorting", "recursion", "class", "api", "backend", "frontend"
+        ]):
             return "codegen"
-        if any(kw in content_lower for kw in ["verify", "calculate", "tolerance", "check"]):
+        if any(kw in content_lower for kw in ["verify", "calculate", "tolerance", "check", "numeric"]):
             return "numeric_verify"
+        if any(kw in content_lower for kw in ["extract", "scan", "ocr", "parse", "invoice", "image"]):
+            return "extraction"
         return "drafting"
 
 def select_model(task_type: str, models_manifest: list = None) -> dict:
