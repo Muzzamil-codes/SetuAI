@@ -1,6 +1,6 @@
 import { TaskInput } from "./types";
 
-const BACKEND_HTTP_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+export const BACKEND_HTTP_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export async function uploadFile(file: File): Promise<string> {
   const formData = new FormData();

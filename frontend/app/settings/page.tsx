@@ -66,116 +66,132 @@ export default function SettingsPage() {
   };
 
   return (
-    <main className="min-h-screen p-6 bg-gray-50 dark:bg-black text-gray-900 dark:text-white flex flex-col items-center">
-      <div className="w-full max-w-4xl space-y-6">
-        <div className="flex items-center justify-between mt-8 border-b border-gray-200 dark:border-zinc-800 pb-4">
-          <div>
-            <h1 className="text-3xl font-bold">Model Configuration</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Configure local and remote LLM/VLM connections visually.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => router.push("/")}
-              className="px-4 py-2 text-sm bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded hover:bg-gray-50 dark:hover:bg-zinc-700 transition"
-            >
-              Back to Home
-            </button>
-            <button
-              onClick={handleSaveAll}
-              className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded transition shadow"
-            >
-              Save Configuration
-            </button>
-          </div>
+    <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <h1 className="text-xl font-bold text-white tracking-wide">
+            Local Model Gateway Configuration
+          </h1>
+          <p className="text-xs text-slate-400 font-mono mt-0.5">
+            Configure sovereign LLM & VLM inference endpoints (Ollama / vLLM / llama.cpp)
+          </p>
         </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push("/")}
+            className="px-3 py-1.5 text-xs font-mono bg-slate-900 border border-slate-800 rounded-xl hover:bg-slate-800 text-slate-300 transition"
+          >
+            ← Mission Control
+          </button>
+          <button
+            onClick={handleSaveAll}
+            className="px-4 py-1.5 text-xs font-mono font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition shadow-lg shadow-emerald-600/20"
+          >
+            Save Registry
+          </button>
+        </div>
+      </div>
 
-        {error && <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-lg">{error}</div>}
-        {status && <div className="p-4 bg-green-50 text-green-700 border border-green-200 rounded-lg">{status}</div>}
+      {error && (
+        <div className="p-3.5 bg-rose-950/50 border border-rose-800 text-rose-300 rounded-xl text-xs font-mono">
+          {error}
+        </div>
+      )}
+      {status && (
+        <div className="p-3.5 bg-emerald-950/50 border border-emerald-800 text-emerald-300 rounded-xl text-xs font-mono">
+          {status}
+        </div>
+      )}
 
-        <div className="space-y-4">
-          {models.map((model, idx) => (
-            <div key={idx} className="p-5 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-xl shadow-sm relative">
+      <div className="space-y-4">
+        {models.map((model, idx) => (
+          <div key={idx} className="p-5 glass-panel rounded-2xl border border-slate-800 space-y-4 relative shadow-xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800/80">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-white px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
+                  #{idx + 1}
+                </span>
+                <span className="text-xs font-mono text-cyan-300 font-semibold">{model.name}</span>
+              </div>
               <button 
                 onClick={() => removeModel(idx)}
-                className="absolute top-4 right-4 text-red-500 hover:text-red-700 hover:bg-red-50 p-1 rounded transition text-sm"
+                className="text-rose-400 hover:text-rose-300 text-xs font-mono px-2 py-1 rounded bg-rose-950/50 border border-rose-800/60 hover:bg-rose-900/50 transition"
               >
-                Delete
+                Remove
               </button>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Model Name (e.g. llama3.2)</label>
-                  <input
-                    type="text"
-                    value={model.name}
-                    onChange={(e) => updateModel(idx, "name", e.target.value)}
-                    className="w-full p-2 text-sm bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Endpoint (e.g. http://192.168.1.10:11434/v1)</label>
-                  <input
-                    type="text"
-                    value={model.endpoint}
-                    onChange={(e) => updateModel(idx, "endpoint", e.target.value)}
-                    className="w-full p-2 text-sm bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Role Pipeline</label>
-                  <select
-                    value={model.role}
-                    onChange={(e) => updateModel(idx, "role", e.target.value)}
-                    className="w-full p-2 text-sm bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="reasoning">reasoning (Verification & Drafting)</option>
-                    <option value="codegen">codegen (Code Generation)</option>
-                    <option value="extraction">extraction (Vision / OCR)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Modality</label>
-                  <select
-                    value={model.modality}
-                    onChange={(e) => updateModel(idx, "modality", e.target.value)}
-                    className="w-full p-2 text-sm bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  >
-                    <option value="text">text (Standard LLM)</option>
-                    <option value="vision">vision (VLM)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Quantization</label>
-                  <input
-                    type="text"
-                    value={model.quant}
-                    onChange={(e) => updateModel(idx, "quant", e.target.value)}
-                    className="w-full p-2 text-sm bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">VRAM Required (MB)</label>
-                  <input
-                    type="number"
-                    value={model.vram_mb}
-                    onChange={(e) => updateModel(idx, "vram_mb", Number(e.target.value))}
-                    className="w-full p-2 text-sm bg-gray-50 dark:bg-zinc-950 border border-gray-200 dark:border-zinc-800 rounded focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                  />
-                </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">Model Identifier (Ollama / Local)</label>
+                <input
+                  type="text"
+                  value={model.name}
+                  onChange={(e) => updateModel(idx, "name", e.target.value)}
+                  className="w-full p-2.5 text-xs font-mono bg-slate-950/90 border border-slate-800 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">Local Inference Endpoint</label>
+                <input
+                  type="text"
+                  value={model.endpoint}
+                  onChange={(e) => updateModel(idx, "endpoint", e.target.value)}
+                  className="w-full p-2.5 text-xs font-mono bg-slate-950/90 border border-slate-800 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">Pipeline Role</label>
+                <select
+                  value={model.role}
+                  onChange={(e) => updateModel(idx, "role", e.target.value)}
+                  className="w-full p-2.5 text-xs font-mono bg-slate-950/90 border border-slate-800 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none"
+                >
+                  <option value="reasoning">reasoning (Deterministic & SymPy Verification)</option>
+                  <option value="codegen">codegen (Code Sandbox & OpenXML Artifacts)</option>
+                  <option value="extraction">extraction (Vision / OCR)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">Modality</label>
+                <select
+                  value={model.modality}
+                  onChange={(e) => updateModel(idx, "modality", e.target.value)}
+                  className="w-full p-2.5 text-xs font-mono bg-slate-950/90 border border-slate-800 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none"
+                >
+                  <option value="text">text (Standard LLM)</option>
+                  <option value="vision">vision (Multimodal VLM)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">Quantization</label>
+                <input
+                  type="text"
+                  value={model.quant}
+                  onChange={(e) => updateModel(idx, "quant", e.target.value)}
+                  className="w-full p-2.5 text-xs font-mono bg-slate-950/90 border border-slate-800 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-mono text-slate-400 mb-1">Estimated VRAM (MB)</label>
+                <input
+                  type="number"
+                  value={model.vram_mb}
+                  onChange={(e) => updateModel(idx, "vram_mb", Number(e.target.value))}
+                  className="w-full p-2.5 text-xs font-mono bg-slate-950/90 border border-slate-800 rounded-xl text-slate-200 focus:border-emerald-500 focus:outline-none"
+                />
               </div>
             </div>
-          ))}
-        </div>
-
-        <button
-          onClick={addModel}
-          className="w-full py-4 border-2 border-dashed border-gray-300 dark:border-zinc-700 rounded-xl text-gray-500 hover:text-gray-700 dark:hover:text-zinc-300 hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition font-medium"
-        >
-          + Add New Model Connection
-        </button>
+          </div>
+        ))}
       </div>
+
+      <button
+        onClick={addModel}
+        className="w-full py-3.5 border border-dashed border-slate-800 rounded-2xl text-xs font-mono text-slate-400 hover:text-emerald-400 hover:border-emerald-500/50 hover:bg-slate-900/40 transition"
+      >
+        + Register Additional Sovereign Model Endpoint
+      </button>
     </main>
   );
 }
