@@ -1,5 +1,5 @@
 """
-Numeric checker using AST allowlist validation and SymPy mathematical evaluation.
+AST-based safe mathematical evaluator.
 Follows API_CONTRACTS.md Section 3.2.
 """
 import ast
@@ -23,12 +23,6 @@ SAFE_FUNCTIONS = {
     "e": math.e,
 }
 
-# Try importing SymPy for symbolic mathematics; if not present, safe AST evaluator handles arithmetic
-try:
-    import sympy
-    HAS_SYMPY = True
-except ImportError:
-    HAS_SYMPY = False
 
 
 class _SafeMathASTValidator(ast.NodeVisitor):
@@ -178,11 +172,7 @@ def verify_numeric(expression: str, constraints: Dict[str, Any] = None) -> ToolR
 
     # 2. Evaluate expression
     try:
-        if HAS_SYMPY and ("=" in expression or "==" in expression):
-            # Use SymPy for algebraic / symbolic checking
-            val = _safe_eval_ast(parsed_tree)
-        else:
-            val = _safe_eval_ast(parsed_tree)
+        val = _safe_eval_ast(parsed_tree)
     except ZeroDivisionError:
         return ToolResult(
             success=True,

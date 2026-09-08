@@ -5,12 +5,14 @@ type AppRoutes = "/" | "/settings" | "/trace/[taskId]"
 type PageRoutes = never
 type LayoutRoutes = "/"
 type RedirectRoutes = never
-type RewriteRoutes = never
+type RewriteRoutes = "/download/[[...path]]" | "/outputs/[[...path]]"
 type Routes = AppRoutes | PageRoutes | LayoutRoutes | RedirectRoutes | RewriteRoutes
 
 
 interface ParamMap {
   "/": {}
+  "/download/[[...path]]": { "path"?: string[]; }
+  "/outputs/[[...path]]": { "path"?: string[]; }
   "/settings": {}
   "/trace/[taskId]": { "taskId": string; }
 }

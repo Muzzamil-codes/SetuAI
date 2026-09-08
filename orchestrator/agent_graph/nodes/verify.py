@@ -89,14 +89,21 @@ def verify_node(state: AgentState) -> dict:
         step = "verify_fail"
         retry_count += 1
 
+    payload = {
+        "detail": detail,
+        "verification_type": task_type,
+        "retry_count": retry_count
+    }
+    
+    # Check if sandbox_mode is in the latest tool result's data
+    tool_data = latest_result.get("data", {})
+    if isinstance(tool_data, dict) and "sandbox_mode" in tool_data:
+        payload["sandbox_mode"] = tool_data["sandbox_mode"]
+
     trace_events.append({
         "task_id": task_id,
         "step": step,
-        "payload": {
-            "detail": detail,
-            "verification_type": task_type,
-            "retry_count": retry_count
-        },
+        "payload": payload,
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
 

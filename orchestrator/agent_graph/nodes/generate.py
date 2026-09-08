@@ -110,28 +110,29 @@ def generate_node(state: AgentState) -> dict:
             if code:
                 summary += f"\n\n```python\n{code}\n```"
             if test_log:
-                summary += f"\n\nTest output: {test_log[:300]}"
+                summary += f"\n\n**Test output:**\n```\n{test_log[:300]}\n```"
         elif task_type == "extraction":
             fields = latest_data.get("fields", latest_data.get("extracted_fields", {}))
             summary = f"Extracted {len(fields)} fields.{review_tag}"
             if fields:
-                summary += "\n" + "\n".join(
-                    f"  • {k}: {v}" for k, v in fields.items()
-                )
+                summary += "\n\n| Field | Value |\n|---|---|\n"
+                summary += "\n".join(f"| {k} | {v} |" for k, v in fields.items())
         elif task_type == "numeric_verify":
             computed = latest_data.get("computed_value", "?")
             expected = latest_data.get("expected", "?")
             passed = latest_data.get("passed", False)
+            status_badge = "🟩 PASSED" if passed else "🟥 FAILED"
             summary = (
-                f"Numeric verification {'PASSED' if passed else 'FAILED'}: "
-                f"computed={computed}, expected={expected}{review_tag}"
+                f"Numeric verification **{status_badge}**{review_tag}\n\n"
+                f"• **Computed:** `{computed}`\n"
+                f"• **Expected:** `{expected}`"
             )
         elif task_type == "drafting":
             chunks = latest_data.get("chunks", [])
             summary = f"Drafting complete — used {len(chunks)} reference chunks.{review_tag}"
             for i, chunk in enumerate(chunks[:3], 1):
                 text = chunk.get("text", str(chunk))[:150] if isinstance(chunk, dict) else str(chunk)[:150]
-                summary += f"\n  [{i}] {text}"
+                summary += f"\n\n> **Reference {i}:**\n> {text}..."
         else:
             summary = f"Task complete.{review_tag}"
 
@@ -202,10 +203,12 @@ def _build_docx(task_id, task_type, content, data, needs_review, outputs_dir):
         tool = get_tool("docx")
         result = tool.run(docx_input)
         if result.success:
+            file_path = result.data.get("file_path") or result.data.get("path") or f"outputs/{ref_no}_approval_note.docx"
+            filename = result.data.get("filename") or os.path.basename(file_path)
             return {
                 "type": "docx",
-                "filename": result.data.get("filename", f"{ref_no}_approval_note.docx"),
-                "path": result.data.get("path", f"outputs/{ref_no}_approval_note.docx")
+                "filename": filename,
+                "path": file_path
             }
     except Exception:
         pass
@@ -248,10 +251,12 @@ def _build_xlsx(task_id, content, data, needs_review, outputs_dir):
         tool = get_tool("xlsx")
         result = tool.run(xlsx_input)
         if result.success:
+            file_path = result.data.get("file_path") or result.data.get("path") or f"outputs/{task_id}_report.xlsx"
+            filename = result.data.get("filename") or os.path.basename(file_path)
             return {
                 "type": "xlsx",
-                "filename": result.data.get("filename", f"{task_id}_report.xlsx"),
-                "path": result.data.get("path", f"outputs/{task_id}_report.xlsx")
+                "filename": filename,
+                "path": file_path
             }
     except Exception:
         pass
@@ -276,7 +281,7 @@ def _build_code(task_id, data, needs_review, outputs_dir):
         if test_log:
             f.write(f"# Test log: {test_log[:300]}\n")
         f.write(f"\n{code}")
-    return {"type": "docx", "filename": filename, "path": f"outputs/{filename}"}
+    return {"type": "py", "filename": filename, "path": f"outputs/{filename}"}
 
 
 def _build_text(task_id, content, outputs_dir):
@@ -285,4 +290,4 @@ def _build_text(task_id, content, outputs_dir):
     path = os.path.join(outputs_dir, filename)
     with open(path, "w") as f:
         f.write(f"Setu AI Output | Task: {task_id}\n\n{content}\n")
-    return {"type": "docx", "filename": filename, "path": f"outputs/{filename}"}
+    return {"type": "txt", "filename": filename, "path": f"outputs/{filename}"}

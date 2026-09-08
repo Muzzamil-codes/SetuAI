@@ -8,7 +8,7 @@ Exposes `run_agent(task_input_dict) -> AsyncGenerator[dict, None]` for the
 backend to consume. Each yielded dict is a TraceEvent-shaped dict.
 """
 from orchestrator.agent_graph.state import AgentState
-from orchestrator.classifier.infer import classify_task, select_model
+from orchestrator.classifier.infer import classify_task_with_confidence, select_model
 from orchestrator.agent_graph.nodes.plan import plan_node
 from orchestrator.agent_graph.nodes.tool_call import tool_call_node
 from orchestrator.agent_graph.nodes.verify import verify_node
@@ -97,7 +97,7 @@ def classify_node(state: AgentState) -> dict:
     content = task_input.get("content", "")
     modality = task_input.get("modality", "text")
 
-    task_type = classify_task(content, modality)
+    task_type, confidence, method = classify_task_with_confidence(content, modality)
     model = select_model(task_type)
 
     trace_events = list(state.get("trace_events", []))
@@ -106,7 +106,8 @@ def classify_node(state: AgentState) -> dict:
         "step": "classify",
         "payload": {
             "task_type": task_type,
-            "confidence": 0.95,
+            "confidence": confidence,
+            "classification_method": method,
             "selected_model": model
         },
         "timestamp": datetime.now(timezone.utc).isoformat()

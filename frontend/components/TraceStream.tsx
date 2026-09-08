@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import MarkdownRenderer from "./MarkdownRenderer";
 import { TraceEvent } from "../lib/types";
 import { 
   Brain, 
@@ -242,9 +243,7 @@ export default function TraceStream({ events }: TraceStreamProps) {
     if (s === "done") {
       return (
         <div className="space-y-2">
-          <p className="text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed">
-            {p.summary || "Agent task completed with 100% verification compliance."}
-          </p>
+          <MarkdownRenderer content={p.summary || "Agent task completed with 100% verification compliance."} />
           {p.artifacts && p.artifacts.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {p.artifacts.map((a: any, i: number) => (

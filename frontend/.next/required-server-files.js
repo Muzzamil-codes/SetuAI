@@ -336,7 +336,21 @@ self.__SERVER_FILES_MANIFEST={
     "turbopack": {
       "root": "/Users/nafey/Desktop/SetuAI/frontend"
     },
-    "distDirRoot": ".next"
+    "distDirRoot": ".next",
+    "_originalRewrites": {
+      "beforeFiles": [],
+      "afterFiles": [
+        {
+          "source": "/outputs/:path*",
+          "destination": "http://localhost:8000/outputs/:path*"
+        },
+        {
+          "source": "/download/:path*",
+          "destination": "http://localhost:8000/download/:path*"
+        }
+      ],
+      "fallback": []
+    }
   },
   "appDir": "/Users/nafey/Desktop/SetuAI/frontend",
   "relativeAppDir": "",

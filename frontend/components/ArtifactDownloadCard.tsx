@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import { ArtifactRef } from "../lib/types";
 import { BACKEND_HTTP_URL } from "../lib/api";
 import { 
@@ -9,7 +9,9 @@ import {
   CheckCircle2, 
   ShieldCheck, 
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Code,
+  Loader2
 } from "lucide-react";
 
 interface ArtifactDownloadCardProps {
@@ -18,7 +20,35 @@ interface ArtifactDownloadCardProps {
 }
 
 export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCardProps) {
+  const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
+
   if (!artifacts || artifacts.length === 0) return null;
+
+  const handleDownload = async (cleanPath: string, filename: string) => {
+    setDownloadingFile(filename);
+    try {
+      // Direct endpoint with Content-Disposition: attachment header
+      const downloadEndpoint = `${BACKEND_HTTP_URL}/download/${cleanPath}`;
+      const res = await fetch(downloadEndpoint);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      console.warn("Blob download fallback triggered:", err);
+      // Fallback: direct window location
+      window.open(`${BACKEND_HTTP_URL}/download/${cleanPath}`, "_blank");
+    } finally {
+      setTimeout(() => setDownloadingFile(null), 1200);
+    }
+  };
 
   return (
     <div className="glass-panel-glow p-6 rounded-2xl space-y-4 border border-emerald-500/30">
@@ -35,7 +65,7 @@ export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCard
               </span>
             </h3>
             <p className="text-xs text-slate-400 font-mono">
-              Deterministic OpenXML files generated strictly on-premise
+              Deterministic files generated on-premise and ready for download
             </p>
           </div>
         </div>
@@ -48,9 +78,10 @@ export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCard
         {artifacts.map((art, i) => {
           const isDocx = art.filename.endsWith(".docx") || art.type.toLowerCase().includes("docx") || art.type.toLowerCase().includes("word");
           const isXlsx = art.filename.endsWith(".xlsx") || art.type.toLowerCase().includes("xlsx") || art.type.toLowerCase().includes("excel");
+          const isCode = art.filename.endsWith(".py") || art.type.toLowerCase().includes("code");
 
-          const cleanPath = art.path.replace(/^\//, "");
-          const downloadUrl = `${BACKEND_HTTP_URL}/${cleanPath}`;
+          const cleanPath = art.path.replace("outputs/", "").replace(/^\//, "");
+          const isCurrentDownloading = downloadingFile === art.filename;
 
           if (isDocx) {
             return (
@@ -85,14 +116,19 @@ export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCard
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Integrity Verified</span>
                   </div>
-                  <a
-                    href={downloadUrl}
-                    download={art.filename}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs font-mono shadow-md shadow-blue-600/20 transition-all"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(cleanPath, art.filename)}
+                    disabled={isCurrentDownloading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-xs font-mono shadow-md shadow-blue-600/20 transition-all"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download .docx</span>
-                  </a>
+                    {isCurrentDownloading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isCurrentDownloading ? "Downloading..." : "Download .docx"}</span>
+                  </button>
                 </div>
               </div>
             );
@@ -133,42 +169,52 @@ export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCard
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Formulas Validated</span>
                   </div>
-                  <a
-                    href={downloadUrl}
-                    download={art.filename}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs font-mono shadow-md shadow-emerald-600/20 transition-all"
+                  <button
+                    type="button"
+                    onClick={() => handleDownload(cleanPath, art.filename)}
+                    disabled={isCurrentDownloading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium text-xs font-mono shadow-md shadow-emerald-600/20 transition-all"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download .xlsx</span>
-                  </a>
+                    {isCurrentDownloading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
+                    <span>{isCurrentDownloading ? "Downloading..." : "Download .xlsx"}</span>
+                  </button>
                 </div>
               </div>
             );
           }
 
-          // Generic artifact fallback
+          // Generic artifact (e.g. .py or .txt)
           return (
             <div
               key={i}
-              className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between"
+              className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between hover:border-slate-700 transition-all shadow-md"
             >
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-slate-800 text-slate-300">
-                  <FileText className="w-5 h-5" />
+                <div className="p-2.5 rounded-xl bg-slate-800 text-slate-300 border border-slate-700">
+                  {isCode ? <Code className="w-5 h-5 text-amber-400" /> : <FileText className="w-5 h-5 text-slate-400" />}
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-white">{art.filename}</h4>
-                  <p className="text-[11px] font-mono text-slate-400 uppercase">{art.type}</p>
+                  <h4 className="text-xs font-bold text-white font-mono">{art.filename}</h4>
+                  <p className="text-[11px] font-mono text-slate-400 uppercase">{art.type || "Document"}</p>
                 </div>
               </div>
-              <a
-                href={downloadUrl}
-                download={art.filename}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-medium text-xs font-mono transition"
+              <button
+                type="button"
+                onClick={() => handleDownload(cleanPath, art.filename)}
+                disabled={isCurrentDownloading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white font-medium text-xs font-mono border border-slate-700 transition"
               >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download</span>
-              </a>
+                {isCurrentDownloading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                <span>{isCurrentDownloading ? "Downloading..." : "Download"}</span>
+              </button>
             </div>
           );
         })}

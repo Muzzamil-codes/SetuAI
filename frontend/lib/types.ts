@@ -17,7 +17,7 @@ export type StepType =
   | "error";
 
 export interface ArtifactRef {
-  type: "docx" | "xlsx" | "pptx";
+  type: "docx" | "xlsx" | "pptx" | "py" | "txt" | "md" | "code";
   filename: string;
   path: string;
 }

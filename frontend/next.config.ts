@@ -9,6 +9,18 @@ const nextConfig: NextConfig = {
   },
   // To fix the blocked cross-origin Next.js dev resources warning:
   allowedDevOrigins: ['127.0.0.1', 'localhost', '10.124.135.77'],
+  async rewrites() {
+    return [
+      {
+        source: '/outputs/:path*',
+        destination: 'http://localhost:8000/outputs/:path*',
+      },
+      {
+        source: '/download/:path*',
+        destination: 'http://localhost:8000/download/:path*',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

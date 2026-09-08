@@ -45,7 +45,7 @@ def tool_call_node(state: AgentState) -> dict:
             tool_input = {
                 "verification_type": "code",
                 "code": code,
-                "test_code": test_code,
+                "tests": test_code,
                 "timeout": 30,
                 "language": "python"
             }

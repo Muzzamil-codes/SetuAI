@@ -175,6 +175,12 @@ exec(compile(code_to_exec, "{test_path}", "exec"), {{'__name__': '__main__'}})
                 "stderr": stderr.strip(),
                 "exit_code": exit_code
             }
+            
+            if runtime_bin:
+                result_data["sandbox_mode"] = "container"
+                result_data["container_runtime"] = os.path.basename(runtime_bin)
+            else:
+                result_data["sandbox_mode"] = "subprocess_fallback"
 
             if not passed:
                 heal_info = format_self_heal_context(stdout, stderr, exit_code)
