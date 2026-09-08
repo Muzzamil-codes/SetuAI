@@ -27,3 +27,18 @@ export async function submitTask(input: Omit<TaskInput, "task_id">): Promise<str
   const data: { task_id: string } = await res.json();
   return data.task_id;
 }
+
+export async function getModels(): Promise<any[]> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/models`);
+  if (!res.ok) throw new Error("Failed to fetch models");
+  return res.json();
+}
+
+export async function saveModels(models: any[]): Promise<void> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/models`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(models),
+  });
+  if (!res.ok) throw new Error("Failed to save models");
+}

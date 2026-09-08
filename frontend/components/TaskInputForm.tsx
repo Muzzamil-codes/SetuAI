@@ -1,6 +1,7 @@
 "use client";
 import React, { useState } from "react";
 import { ColorTheme } from "./ThemeToggle";
+import { uploadFile, submitTask } from "../lib/api";
 
 interface TaskInputFormProps {
   onTaskStarted: (taskId: string) => void;
@@ -11,18 +12,47 @@ export default function TaskInputForm({ onTaskStarted, theme = "light" }: TaskIn
   const [instructions, setInstructions] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const isDark = theme === "dark";
+  const isDark = theme === "dark" || theme === "elevated";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!instructions.trim()) return;
 
     setLoading(true);
-    setTimeout(() => {
+    setError(null);
+
+    try {
+      let modality: "text" | "image" | "file" = "text";
+      let content = instructions;
+
+      // If a file is attached, upload it first
+      if (file) {
+        const uploadedPath = await uploadFile(file);
+        content = uploadedPath;
+
+        // Determine modality from file type
+        if (file.type.startsWith("image/")) {
+          modality = "image";
+        } else {
+          modality = "file";
+        }
+      }
+
+      // Submit the task to the backend — this triggers the orchestrator
+      const taskId = await submitTask({
+        modality,
+        content,
+        context: { original_instructions: instructions },
+      });
+
+      onTaskStarted(taskId);
+    } catch (err: any) {
+      console.error("Task submission failed:", err);
+      setError(err.message || "Failed to start task. Is the backend running?");
       setLoading(false);
-      onTaskStarted("demo-task-101");
-    }, 600);
+    }
   };
 
   return (
@@ -34,6 +64,12 @@ export default function TaskInputForm({ onTaskStarted, theme = "light" }: TaskIn
           : "bg-white border-gray-200 text-gray-900 shadow-md"
       }`}
     >
+      {error && (
+        <div className="p-3 bg-red-900/30 border border-red-700 text-red-300 rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
       <div>
         <label className={`block text-sm font-semibold mb-2 ${isDark ? "text-zinc-200" : "text-gray-800"}`}>
           Task Instructions
@@ -65,6 +101,11 @@ export default function TaskInputForm({ onTaskStarted, theme = "light" }: TaskIn
               : "text-gray-500 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
           } file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold`}
         />
+        {file && (
+          <p className={`mt-1 text-xs ${isDark ? "text-zinc-500" : "text-gray-400"}`}>
+            Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)
+          </p>
+        )}
       </div>
 
       <button
@@ -76,4 +117,4 @@ export default function TaskInputForm({ onTaskStarted, theme = "light" }: TaskIn
       </button>
     </form>
   );
-}
+}

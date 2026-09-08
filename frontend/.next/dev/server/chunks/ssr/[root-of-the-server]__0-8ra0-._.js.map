@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 46, "column": 0}, "map": {"version":3,"sources":["file:///run/media/muzzonfedora/DATA/Python/Agentic%20Ai%20automations/SetuAI/frontend/components/ThemeProvider.tsx"],"sourcesContent":["\"use client\";\r\nimport * as React from \"react\";\r\nimport { ThemeProvider as NextThemesProvider } from \"next-themes\";\r\n\r\nexport function ThemeProvider({ children }: { children: React.ReactNode }) {\r\n  return (\r\n    <NextThemesProvider attribute=\"class\" defaultTheme=\"system\" enableSystem>\r\n      {children}\r\n    </NextThemesProvider>\r\n  );\r\n}"],"names":["ThemeProvider","children","attribute","defaultTheme","enableSystem"],"mappings":";;;;;AAEA;AAFA;;;AAIO,SAASA,cAAc,EAAEC,QAAQ,EAAiC;IACvE,qBACE,8OAAC,iKAAkB;QAACC,WAAU;QAAQC,cAAa;QAASC,YAAY;kBACrEH;;;;;;AAGP"}}]
+}

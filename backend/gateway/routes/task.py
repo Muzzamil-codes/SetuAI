@@ -10,6 +10,62 @@ from backend.db import task_store
 router = APIRouter()
 
 
+async def run_orchestrator(task_id: str, task_input_dict: dict):
+    """Runs the real orchestrator agent graph, streaming TraceEvents via WebSocket.
+    
+    Falls back to mock trace generator if the orchestrator is not available.
+    """
+    try:
+        from orchestrator.agent_graph.graph import run_agent
+        
+        async for event_dict in run_agent(task_input_dict):
+            event_dict["task_id"] = task_id
+            
+            event = TraceEvent(
+                task_id=task_id,
+                step=event_dict.get("step", "error"),
+                payload=event_dict.get("payload", {}),
+                timestamp=event_dict.get("timestamp", datetime.now(timezone.utc).isoformat())
+            )
+            event_json = event.model_dump_json()
+            await manager.broadcast_event(task_id, event_json)
+            
+            await asyncio.sleep(0.3)
+            
+            if event.step == "done":
+                payload = event.payload
+                task_store.update_task_result(
+                    task_id=task_id,
+                    status="done",
+                    summary=payload.get("summary", "Task completed successfully."),
+                    artifacts=payload.get("artifacts", [])
+                )
+            elif event.step == "error":
+                task_store.update_task_result(
+                    task_id=task_id,
+                    status="error",
+                    summary="",
+                    error=event.payload.get("error", "Unknown error")
+                )
+                
+    except ImportError:
+        await mock_trace_generator(task_id)
+    except Exception as e:
+        error_event = TraceEvent(
+            task_id=task_id,
+            step="error",
+            payload={"error": str(e)},
+            timestamp=datetime.now(timezone.utc).isoformat()
+        )
+        await manager.broadcast_event(task_id, error_event.model_dump_json())
+        task_store.update_task_result(
+            task_id=task_id,
+            status="error",
+            summary="",
+            error=str(e)
+        )
+
+
 async def mock_trace_generator(task_id: str):
     """Simulates agent steps with 1-second sleeps for self-testing until Muzzamil's orchestrator is ready."""
     steps = [
@@ -47,8 +103,14 @@ async def create_task(task_input: TaskInput):
     task_input.task_id = task_id
     task_store.save_task(task_id=task_id, status="running")
 
-    # Background execution using mock generator
-    asyncio.create_task(mock_trace_generator(task_id))
+    task_input_dict = {
+        "task_id": task_id,
+        "modality": task_input.modality,
+        "content": task_input.content,
+        "context": task_input.context
+    }
+
+    asyncio.create_task(run_orchestrator(task_id, task_input_dict))
 
     return {"task_id": task_id}
 

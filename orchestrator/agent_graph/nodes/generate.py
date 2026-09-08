@@ -13,8 +13,34 @@ from datetime import datetime, timezone
 import os
 
 
+def _should_produce_artifact(task_input: dict, task_type: str) -> bool:
+    """Determine whether the task explicitly requests a file artifact.
+
+    Only produce a file when the user's instructions clearly ask for a
+    document, report, note, spreadsheet, etc.  Regular prompts like
+    'write code for X' or 'explain Y' should NOT produce a file.
+    """
+    content = task_input.get("content", "").lower()
+    context = task_input.get("context", {})
+    original = str(context.get("original_instructions", "")).lower()
+    combined = content + " " + original
+
+    # Extraction from an uploaded file always produces a report
+    modality = task_input.get("modality", "text")
+    if modality in ("image", "file"):
+        return True
+
+    artifact_keywords = [
+        "generate report", "draft note", "approval note", "create document",
+        "write report", "produce file", "export", "download",
+        "save as", ".docx", ".xlsx", ".pdf", "spreadsheet",
+        "draft approval", "draft document"
+    ]
+    return any(kw in combined for kw in artifact_keywords)
+
+
 def generate_node(state: AgentState) -> dict:
-    """Generate final artifacts based on task type and tool results."""
+    """Generate final artifacts (only when explicitly requested) and emit done event."""
     task_type = state.get("task_type", "drafting")
     task_id = state.get("task_id", "unknown")
     task_input = state.get("task_input", {})
@@ -32,48 +58,82 @@ def generate_node(state: AgentState) -> dict:
     needs_review = verification_status == "failed"
     content = task_input.get("content", "")
 
-    outputs_dir = os.path.join(os.getcwd(), "outputs")
-    os.makedirs(outputs_dir, exist_ok=True)
+    # -------------------------------------------------------------------
+    # Only produce a file artifact if the task explicitly asks for one
+    # -------------------------------------------------------------------
+    if _should_produce_artifact(task_input, task_type):
+        outputs_dir = os.path.join(os.getcwd(), "outputs")
+        os.makedirs(outputs_dir, exist_ok=True)
 
-    try:
-        if task_type in ["extraction", "drafting"]:
-            artifact = _build_docx(task_id, task_type, content,
-                                   latest_data, needs_review, outputs_dir)
-        elif task_type == "numeric_verify":
-            artifact = _build_xlsx(task_id, content, latest_data,
-                                   needs_review, outputs_dir)
-        elif task_type == "codegen":
-            artifact = _build_code(task_id, latest_data,
-                                   needs_review, outputs_dir)
-        else:
-            artifact = _build_text(task_id, content, outputs_dir)
+        try:
+            if task_type in ["extraction", "drafting"]:
+                artifact = _build_docx(task_id, task_type, content,
+                                       latest_data, needs_review, outputs_dir)
+            elif task_type == "numeric_verify":
+                artifact = _build_xlsx(task_id, content, latest_data,
+                                       needs_review, outputs_dir)
+            elif task_type == "codegen":
+                artifact = _build_code(task_id, latest_data,
+                                       needs_review, outputs_dir)
+            else:
+                artifact = _build_text(task_id, content, outputs_dir)
 
-        artifacts.append(artifact)
+            artifacts.append(artifact)
+            review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
+            summary = (
+                f"Generated {artifact.get('type', 'file')}: "
+                f"{artifact.get('filename', 'unknown')}{review_tag}"
+            )
+
+            # Emit 'generate' event for artifact creation
+            trace_events.append({
+                "task_id": task_id,
+                "step": "generate",
+                "payload": {
+                    "artifact_type": artifact.get("type", "unknown"),
+                    "filename": artifact.get("filename", "")
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+
+        except Exception as e:
+            summary = f"Failed to generate artifact: {str(e)}"
+
+    else:
+        # ----- No file artifact requested — return results inline -----
         review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
-        summary = (
-            f"Generated {artifact.get('type', 'file')}: "
-            f"{artifact.get('filename', 'unknown')}{review_tag}"
-        )
 
-    except Exception as e:
-        summary = f"Failed to generate artifact: {str(e)}"
-        err_file = f"{task_id}_error.txt"
-        err_path = os.path.join(outputs_dir, err_file)
-        with open(err_path, "w") as f:
-            f.write(f"Error: {e}\n")
-        artifacts.append({"type": "docx", "filename": err_file,
-                          "path": f"outputs/{err_file}"})
-
-    # Emit 'generate' event
-    trace_events.append({
-        "task_id": task_id,
-        "step": "generate",
-        "payload": {
-            "artifact_type": artifact.get("type", "unknown") if artifacts else "error",
-            "filename": artifact.get("filename", "") if artifacts else ""
-        },
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    })
+        if task_type == "codegen":
+            code = latest_data.get("generated_code", "")
+            test_log = latest_data.get("stdout", "")
+            summary = f"Code generation complete.{review_tag}"
+            if code:
+                summary += f"\n\n```python\n{code}\n```"
+            if test_log:
+                summary += f"\n\nTest output: {test_log[:300]}"
+        elif task_type == "extraction":
+            fields = latest_data.get("fields", latest_data.get("extracted_fields", {}))
+            summary = f"Extracted {len(fields)} fields.{review_tag}"
+            if fields:
+                summary += "\n" + "\n".join(
+                    f"  • {k}: {v}" for k, v in fields.items()
+                )
+        elif task_type == "numeric_verify":
+            computed = latest_data.get("computed_value", "?")
+            expected = latest_data.get("expected", "?")
+            passed = latest_data.get("passed", False)
+            summary = (
+                f"Numeric verification {'PASSED' if passed else 'FAILED'}: "
+                f"computed={computed}, expected={expected}{review_tag}"
+            )
+        elif task_type == "drafting":
+            chunks = latest_data.get("chunks", [])
+            summary = f"Drafting complete — used {len(chunks)} reference chunks.{review_tag}"
+            for i, chunk in enumerate(chunks[:3], 1):
+                text = chunk.get("text", str(chunk))[:150] if isinstance(chunk, dict) else str(chunk)[:150]
+                summary += f"\n  [{i}] {text}"
+        else:
+            summary = f"Task complete.{review_tag}"
 
     # Emit 'done' event
     trace_events.append({

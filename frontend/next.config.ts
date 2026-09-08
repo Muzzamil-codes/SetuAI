@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Allow all typical local origins so HMR works for the frontend
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["localhost:3000", "127.0.0.1:3000", "10.124.135.77:3000"],
+    },
+  },
+  // To fix the blocked cross-origin Next.js dev resources warning:
+  allowedDevOrigins: ['127.0.0.1', 'localhost', '10.124.135.77'],
 };
 
 export default nextConfig;
