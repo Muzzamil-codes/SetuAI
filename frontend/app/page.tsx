@@ -138,10 +138,18 @@ export default function HomePage() {
         modality = file.type.startsWith("image/") ? "image" : "file";
       }
 
+      const chatHistory = (conv?.messages || []).map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
       const taskId = await submitTask({
         modality,
         content,
-        context: { original_instructions: text },
+        context: { 
+          original_instructions: text,
+          chat_history: chatHistory
+        },
         model_override: model,
       });
 

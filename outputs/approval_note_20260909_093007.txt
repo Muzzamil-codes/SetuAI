@@ -1,0 +1,8 @@
+Approval Note — make it in .docx format
+Company: N/A
+Reviewer: N/A
+Department: N/A
+
+Findings:
+
+Recommendations:

@@ -32,16 +32,7 @@
     ],
     "fallback": []
   },
-  "dynamicRoutes": [
-    {
-      "page": "/trace/[taskId]",
-      "regex": "^/trace/([^/]+?)(?:/)?$",
-      "routeKeys": {
-        "nxtPtaskId": "nxtPtaskId"
-      },
-      "namedRegex": "^/trace/(?<nxtPtaskId>[^/]+?)(?:/)?$"
-    }
-  ],
+  "dynamicRoutes": [],
   "staticRoutes": [
     {
       "page": "/",

@@ -67,22 +67,34 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
     if modality in ["image", "file"]:
         return "extraction", 1.0, "modality_rule"
 
+    # Pre-check: very short or generic prompts are conversational
+    content_stripped = content.strip().lower()
+    conversational_patterns = [
+        "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+        "how are you", "what's up", "who are you", "what can you do",
+        "thanks", "thank you", "bye", "goodbye", "help"
+    ]
+    if len(content_stripped.split()) <= 5:
+        if any(content_stripped.startswith(p) or content_stripped == p for p in conversational_patterns):
+            return "conversational", 0.95, "conversational_rule"
+
     # Tier 1: Local LLM structured classification
     endpoint = _get_llm_endpoint()
     if endpoint:
         url = f"{endpoint}/chat/completions"
         system_prompt = (
-            "Classify the text into one of these 4 categories: codegen, numeric_verify, extraction, drafting.\n"
+            "Classify the text into one of these 5 categories: codegen, numeric_verify, extraction, drafting, conversational.\n"
             "Categories:\n"
-            "- codegen: writing or debugging code, software architecture.\n"
+            "- codegen: writing or debugging code, software architecture, programming tasks.\n"
             "- numeric_verify: verifying calculations, checking numeric values, tolerances.\n"
             "- extraction: extracting data from tables, documents, or logs.\n"
-            "- drafting: writing reports, emails, summaries, non-code text.\n"
+            "- drafting: writing reports, emails, summaries, approval notes, non-code documents.\n"
+            "- conversational: greetings, general questions, casual chat, help requests, or anything that doesn't fit the above.\n"
             "Return JSON only with keys: 'task_type' (str), 'confidence' (float 0-1), 'reasoning' (str)."
         )
         
         payload = {
-            "model": "deepseek-r1",
+            "model": "deepseek-r1:8b",
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content}
@@ -91,26 +103,42 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
         }
         
         try:
+            import re
+            
+            def _extract_json(data):
+                msg = data['choices'][0]['message']
+                content_str = msg.get('content', '') or ''
+                reasoning = msg.get('reasoning', '') or ''
+                
+                # Combine both to search for JSON
+                full_text = content_str + "\n" + reasoning
+                # Find JSON block
+                json_match = re.search(r'\{[^{}]*\"task_type\"[^{}]*\}', full_text)
+                if json_match:
+                    return json.loads(json_match.group(0))
+                
+                # Fallback
+                if content_str:
+                    return json.loads(content_str)
+                return json.loads(reasoning)
+
             if HAS_REQUESTS:
-                resp = requests.post(url, json=payload, timeout=5)
+                resp = requests.post(url, json=payload, timeout=30)
                 if resp.status_code == 200:
-                    data = resp.json()
-                    content_str = data['choices'][0]['message']['content']
-                    res = json.loads(content_str)
+                    res = _extract_json(resp.json())
                     task_type = res.get('task_type')
-                    if task_type in ["codegen", "numeric_verify", "extraction", "drafting"]:
+                    if task_type in ["codegen", "numeric_verify", "extraction", "drafting", "conversational"]:
                         return task_type, float(res.get('confidence', 0.9)), "llm"
             else:
                 req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'),
                                              headers={'Content-Type': 'application/json'},
                                              method='POST')
-                with urllib.request.urlopen(req, timeout=5) as resp:
+                with urllib.request.urlopen(req, timeout=30) as resp:
                     if resp.status == 200:
                         data = json.loads(resp.read().decode('utf-8'))
-                        content_str = data['choices'][0]['message']['content']
-                        res = json.loads(content_str)
+                        res = _extract_json(data)
                         task_type = res.get('task_type')
-                        if task_type in ["codegen", "numeric_verify", "extraction", "drafting"]:
+                        if task_type in ["codegen", "numeric_verify", "extraction", "drafting", "conversational"]:
                             return task_type, float(res.get('confidence', 0.9)), "llm"
         except Exception as e:
             print(f"LLM classification failed: {e}")
@@ -131,8 +159,12 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
             "neg": []
         },
         "drafting": {
-            "pos": ["draft", "approval", "note", "write", "document", "email", "report", "summarize", "compose", "letter", "memo"],
+            "pos": ["draft", "approval", "note", "document", "email", "report", "summarize", "compose", "letter", "memo"],
             "neg": ["python", "function", "algorithm", "debug", "code", "implement"]
+        },
+        "conversational": {
+            "pos": ["hello", "hi", "hey", "how are you", "what can you do", "who are you", "help me", "explain", "tell me about", "what is"],
+            "neg": ["code", "program", "draft", "extract", "verify", "calculate", "report", "document"]
         }
     }
     
@@ -201,7 +233,8 @@ def select_model(task_type: str, models_manifest: list = None) -> dict:
         "extraction": "extraction",
         "codegen": "codegen",
         "drafting": "reasoning",
-        "numeric_verify": "reasoning"
+        "numeric_verify": "reasoning",
+        "conversational": "reasoning"
     }
     
     target_role = role_map.get(task_type, "reasoning")

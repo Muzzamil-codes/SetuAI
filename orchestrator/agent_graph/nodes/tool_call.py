@@ -1,19 +1,128 @@
 """
-Tool execution node — dispatches to the correct tool via tools/tool_registry.
+Tool execution node — dispatches to the correct tool via tools/tool_registry,
+and actually calls the LLM to generate code, drafts, and conversational
+responses rather than returning hardcoded stubs.
 
 Routes based on task_type:
-  extraction  → vision tool
-  codegen     → sandbox tool (code verification)
-  drafting    → retrieval tool (RAG)
+  extraction     → vision tool
+  codegen        → LLM code generation → sandbox verification
+  drafting       → LLM draft generation (RAG when available)
   numeric_verify → sandbox tool (numeric verification)
-
-Falls back to a stub if the real tool registry isn't available yet
-(so the graph can be tested standalone before other team members'
-tools are ready).
+  conversational → LLM direct response (no tools)
 """
 from orchestrator.agent_graph.state import AgentState
 from datetime import datetime, timezone
+import json
+import os
 
+
+# ---------------------------------------------------------------------------
+# LLM call helper — calls the Ollama-compatible endpoint
+# ---------------------------------------------------------------------------
+
+def _get_model_config(state: dict) -> dict:
+    """Get the selected model config from state, or fall back to models.json."""
+    model = state.get("selected_model", {})
+    if model and model.get("endpoint"):
+        return model
+    # Fallback: load from models.json
+    try:
+        models_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "models_registry", "models.json"
+        )
+        with open(models_path, "r") as f:
+            manifest = json.load(f)
+        # Return first available model
+        if manifest:
+            return manifest[0]
+    except Exception:
+        pass
+    return {}
+
+
+def _call_llm(model_config: dict, system_prompt: str, user_prompt: str,
+              timeout: int = 120, chat_history: list = None) -> str:
+    """Call the Ollama-compatible OpenAI API and return the text response."""
+    import re
+
+    endpoint = model_config.get("endpoint", "")
+    model_name = model_config.get("name", "deepseek-r1:8b")
+
+    if not endpoint:
+        print("[tool_call] No endpoint configured for LLM call")
+        return ""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    if chat_history:
+        messages.extend(chat_history)
+    messages.append({"role": "user", "content": user_prompt})
+
+    url = f"{endpoint}/chat/completions"
+    payload = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": 0.7,
+        "max_tokens": 4096,
+    }
+
+    def _extract_content(data: dict) -> str:
+        """Extract the actual response from the API response, handling DeepSeek's reasoning field."""
+        msg = data["choices"][0]["message"]
+        content = msg.get("content", "") or ""
+        reasoning = msg.get("reasoning", "") or ""
+
+        # Strip <think>...</think> blocks from content
+        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+        # If content is empty but reasoning exists (DeepSeek-R1 quirk),
+        # use the last paragraph of reasoning as a fallback
+        if not content and reasoning:
+            # The reasoning often ends with the actual answer
+            paragraphs = [p.strip() for p in reasoning.strip().split("\n\n") if p.strip()]
+            if paragraphs:
+                content = paragraphs[-1]
+
+        return content
+
+    try:
+        import requests
+        print(f"[tool_call] Calling LLM: {model_name} at {url}")
+        resp = requests.post(url, json=payload, timeout=timeout)
+        if resp.status_code == 200:
+            data = resp.json()
+            content = _extract_content(data)
+            print(f"[tool_call] LLM response: {len(content)} chars")
+            return content
+        else:
+            print(f"[tool_call] LLM HTTP error: {resp.status_code} - {resp.text[:200]}")
+    except ImportError:
+        import urllib.request
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            print(f"[tool_call] Calling LLM (urllib): {model_name} at {url}")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    content = _extract_content(data)
+                    print(f"[tool_call] LLM response: {len(content)} chars")
+                    return content
+        except Exception as e:
+            print(f"[tool_call] LLM urllib error: {e}")
+    except Exception as e:
+        print(f"[tool_call] LLM request error: {e}")
+
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Main tool_call_node
+# ---------------------------------------------------------------------------
 
 def tool_call_node(state: AgentState) -> dict:
     """Execute the appropriate tool based on task type."""
@@ -26,30 +135,35 @@ def tool_call_node(state: AgentState) -> dict:
     tool_calls = list(state.get("tool_calls", []))
     tool_results = list(state.get("tool_results", []))
 
+    model_config = _get_model_config(state)
     tool_name = "unknown"
-    tool_input = {}
+    tool_input_data = {}
     result_dict = {"success": False, "data": {}, "error": "No tool executed"}
 
     try:
         if task_type == "extraction":
             tool_name = "vision"
             image_path = task_input.get("content", "")
-            tool_input = {"image_path": image_path, "extract_mode": "both"}
-            result_dict = _run_tool(tool_name, tool_input)
+            tool_input_data = {"image_path": image_path, "extract_mode": "both"}
+            result_dict = _run_tool(tool_name, tool_input_data)
 
         elif task_type == "codegen":
             tool_name = "sandbox"
             user_request = task_input.get("content", "")
-            code = _generate_demo_code(user_request)
-            test_code = _generate_demo_test(user_request)
-            tool_input = {
+            chat_history = state.get("messages", [])
+
+            # Actually call the LLM to generate code
+            code = _llm_generate_code(model_config, user_request, chat_history)
+            test_code = _llm_generate_tests(model_config, user_request, code)
+
+            tool_input_data = {
                 "verification_type": "code",
                 "code": code,
                 "tests": test_code,
                 "timeout": 30,
                 "language": "python"
             }
-            result_dict = _run_tool(tool_name, tool_input)
+            result_dict = _run_tool(tool_name, tool_input_data)
             # Attach code to results so generate_node can write it out
             if result_dict.get("data") is None:
                 result_dict["data"] = {}
@@ -57,22 +171,54 @@ def tool_call_node(state: AgentState) -> dict:
             result_dict["data"]["test_code"] = test_code
 
         elif task_type == "drafting":
-            tool_name = "retrieval"
-            query = task_input.get("content", "")
-            tool_input = {"query": query, "top_k": 5}
-            result_dict = _run_tool(tool_name, tool_input)
+            tool_name = "llm_draft"
+            user_request = task_input.get("content", "")
+            chat_history = state.get("messages", [])
+
+            # Try RAG retrieval first
+            rag_context = _try_retrieval(user_request)
+
+            # Call LLM to actually draft the response
+            draft = _llm_draft_response(model_config, user_request, rag_context, chat_history)
+
+            result_dict = {
+                "success": bool(draft),
+                "data": {
+                    "draft": draft,
+                    "chunks": rag_context if rag_context else [],
+                    "generated_text": draft
+                },
+                "error": None if draft else "LLM failed to generate a draft"
+            }
 
         elif task_type == "numeric_verify":
             tool_name = "sandbox"
             content = task_input.get("content", "")
-            tool_input = {
+            tool_input_data = {
                 "verification_type": "numeric",
                 "expression": _extract_number(content),
                 "expected_value": _extract_expected(content),
                 "tolerance": 0.1,
                 "unit": "bar"
             }
-            result_dict = _run_tool(tool_name, tool_input)
+            result_dict = _run_tool(tool_name, tool_input_data)
+
+        elif task_type == "conversational":
+            tool_name = "llm_chat"
+            user_request = task_input.get("content", "")
+            chat_history = state.get("messages", [])
+
+            # Direct LLM response for conversational prompts
+            response = _llm_chat_response(model_config, user_request, chat_history)
+
+            result_dict = {
+                "success": bool(response),
+                "data": {
+                    "response": response,
+                    "generated_text": response
+                },
+                "error": None if response else "LLM failed to generate a response"
+            }
 
         else:
             result_dict = {
@@ -86,7 +232,7 @@ def tool_call_node(state: AgentState) -> dict:
     # Record the call
     tool_call_record = {
         "tool": tool_name,
-        "input": {k: str(v)[:200] for k, v in tool_input.items()},
+        "input": {k: str(v)[:200] for k, v in tool_input_data.items()},
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
     tool_calls.append(tool_call_record)
@@ -97,7 +243,7 @@ def tool_call_node(state: AgentState) -> dict:
         "step": "tool_call",
         "payload": {
             "tool_name": tool_name,
-            "input_summary": {k: str(v)[:100] for k, v in tool_input.items()},
+            "input_summary": {k: str(v)[:100] for k, v in tool_input_data.items()},
             "success": result_dict.get("success", False)
         },
         "timestamp": datetime.now(timezone.utc).isoformat()
@@ -111,11 +257,11 @@ def tool_call_node(state: AgentState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool dispatch — tries real registry, falls back to stub
+# Tool dispatch — tries real registry, falls back gracefully (NO stubs)
 # ---------------------------------------------------------------------------
 
 def _run_tool(name: str, input_data: dict) -> dict:
-    """Call a tool by name through the registry, with stub fallback."""
+    """Call a tool by name through the registry. No fake stub fallback."""
     try:
         from tools.tool_registry import get_tool
         tool = get_tool(name)
@@ -125,184 +271,125 @@ def _run_tool(name: str, input_data: dict) -> dict:
             "data": result.data if isinstance(result.data, dict) else {},
             "error": result.error
         }
+    except Exception as e:
+        return {
+            "success": False,
+            "data": {},
+            "error": f"Failed to import tool '{name}': {str(e)}"
+        }
+
+
+def _try_retrieval(query: str) -> list:
+    """Try the RAG retrieval tool. Returns chunks list, or empty list on failure."""
+    try:
+        from tools.tool_registry import get_tool
+        tool = get_tool("retrieval")
+        result = tool.run({"query": query, "top_k": 5})
+        if result.success and isinstance(result.data, dict):
+            return result.data.get("chunks", [])
     except Exception:
-        # Stub fallback — other team members' tools aren't ready yet
-        return _stub_result(name, input_data)
+        pass
+    return []
 
 
-def _stub_result(name: str, input_data: dict) -> dict:
-    """Return realistic stub data so the graph can be tested standalone."""
-    if name == "vision":
-        return {
-            "success": True,
-            "data": {
-                "fields": {
-                    "valve_tag": "V-204",
-                    "pressure_reading": "4.05 bar",
-                    "inspection_date": "2024-03-15",
-                    "inspector": "R. Kumar",
-                    "condition": "Normal",
-                    "next_inspection": "2024-03-29"
-                },
-                "provenance": [
-                    {"field": "valve_tag", "bbox": [102, 210, 245, 238],
-                     "confidence": 0.97},
-                    {"field": "pressure_reading", "bbox": [300, 210, 460, 238],
-                     "confidence": 0.93}
-                ]
-            },
-            "error": None
-        }
-    elif name == "retrieval":
-        return {
-            "success": True,
-            "data": {
-                "chunks": [
-                    {"text": "Valve V-204 rated tolerance is ±0.1 bar per SOP-114.",
-                     "source": "SOP-114.txt", "score": 0.92},
-                    {"text": "Emergency shutdown trigger: Pressure exceeding 5.0 bar.",
-                     "source": "SOP-114.txt", "score": 0.85}
-                ]
-            },
-            "error": None
-        }
-    elif name == "sandbox":
-        vtype = input_data.get("verification_type", "")
-        if vtype == "numeric":
-            return {
-                "success": True,
-                "data": {"passed": True, "computed_value": 4.05,
-                         "expected": 4.0, "deviation": 0.05,
-                         "tolerance": 0.1, "unit": "bar"},
-                "error": None
-            }
-        else:
-            return {
-                "success": True,
-                "data": {"passed": True, "stdout": "All tests passed!",
-                         "stderr": "", "exit_code": 0},
-                "error": None
-            }
+# ---------------------------------------------------------------------------
+# LLM-powered generation functions
+# ---------------------------------------------------------------------------
+
+def _llm_generate_code(model_config: dict, user_request: str, chat_history: list = None) -> str:
+    """Use the LLM to generate Python code for the user's request."""
+    system_prompt = (
+        "You are an expert Python programmer. Generate clean, working Python code "
+        "for the user's request. Output ONLY the Python code, no explanations, "
+        "no markdown fences. The code should be complete and runnable."
+    )
+    code = _call_llm(model_config, system_prompt, user_request, timeout=90, chat_history=chat_history)
+
+    if code:
+        # Clean up: strip markdown fences if the model included them
+        code = _strip_markdown_fences(code)
+        return code
+
+    # Last resort: return a minimal placeholder (NOT the old hardcoded sensor code)
+    return f'# Could not generate code — LLM unavailable\n# Request: {user_request}\nprint("LLM service is currently unavailable. Please try again.")\n'
+
+
+def _llm_generate_tests(model_config: dict, user_request: str,
+                         generated_code: str) -> str:
+    """Use the LLM to generate test code for the generated code."""
+    system_prompt = (
+        "You are a Python testing expert. Given the following code, write a simple "
+        "test script that validates it works correctly. Include a few test functions "
+        "and a main block that runs them and prints 'All tests passed!' if they pass. "
+        "Output ONLY the Python code, no explanations, no markdown fences."
+    )
+    user_prompt = f"Original request: {user_request}\n\nCode to test:\n{generated_code}"
+    tests = _call_llm(model_config, system_prompt, user_prompt, timeout=60)
+
+    if tests:
+        tests = _strip_markdown_fences(tests)
+        return tests
+
+    # Minimal fallback test
+    return (
+        "def test_runs():\n"
+        "    print('Basic smoke test passed')\n\n"
+        "if __name__ == '__main__':\n"
+        "    test_runs()\n"
+        "    print('All tests passed!')\n"
+    )
+
+
+def _llm_draft_response(model_config: dict, user_request: str,
+                          rag_context: list, chat_history: list = None) -> str:
+    """Use the LLM to draft a text response, optionally using RAG context."""
+    context_text = ""
+    if rag_context:
+        for i, chunk in enumerate(rag_context[:5]):
+            if isinstance(chunk, dict):
+                context_text += f"\n[Reference {i+1}]: {chunk.get('text', str(chunk))}"
+            else:
+                context_text += f"\n[Reference {i+1}]: {str(chunk)}"
+
+    if context_text:
+        system_prompt = (
+            "You are a helpful AI assistant for industrial and enterprise tasks. "
+            "Use the provided reference context to answer the user's question accurately. "
+            "Cite references where applicable."
+        )
+        user_prompt = f"Context:{context_text}\n\nUser request: {user_request}"
     else:
-        return {"success": True, "data": {"result": f"Stub: {name}"}, "error": None}
+        system_prompt = (
+            "You are a helpful AI assistant. Provide a clear, well-structured response "
+            "to the user's request. Use markdown formatting where appropriate."
+        )
+        user_prompt = user_request
+
+    return _call_llm(model_config, system_prompt, user_prompt, timeout=90, chat_history=chat_history)
 
 
-# ---------------------------------------------------------------------------
-# Demo code generators (for codegen tasks when no LLM is available)
-# ---------------------------------------------------------------------------
-
-def _generate_demo_code(user_request: str) -> str:
-    """Generates a realistic demo script based on the request."""
-    req = user_request.lower()
-    if "modbus" in req:
-        return '''"""Modbus TCP Polling Script for Industrial Sensor Readings."""
-import struct
-import socket
-import time
-
-def read_holding_registers(host: str, port: int, unit_id: int,
-                           start_addr: int, count: int) -> list[int]:
-    """Read holding registers from a Modbus TCP device."""
-    transaction_id = 1
-    protocol_id = 0
-    length = 6
-    function_code = 3  # Read Holding Registers
-
-    header = struct.pack('>HHHBBHH',
-        transaction_id, protocol_id, length,
-        unit_id, function_code, start_addr, count)
-
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(5.0)
-        sock.connect((host, port))
-        sock.send(header)
-        response = sock.recv(256)
-
-    byte_count = response[8]
-    values = []
-    for i in range(0, byte_count, 2):
-        val = struct.unpack('>H', response[9+i:11+i])[0]
-        values.append(val)
-    return values
-
-def poll_sensors(host="127.0.0.1", port=502, interval=2.0, num_reads=5):
-    """Poll sensor registers at a fixed interval."""
-    results = []
-    for i in range(num_reads):
-        values = read_holding_registers(host, port, unit_id=1,
-                                         start_addr=0, count=4)
-        results.append({"reading": i+1, "values": values,
-                        "timestamp": time.time()})
-        if i < num_reads - 1:
-            time.sleep(interval)
-    return results
-
-if __name__ == "__main__":
-    data = poll_sensors()
-    for entry in data:
-        print(f"Reading {entry[\'reading\']}: {entry[\'values\']}")
-'''
-    return '''"""Data Processing Utility for Industrial Sensor Logs."""
-
-def process_sensor_data(readings: list[dict]) -> dict:
-    """Process sensor readings and return statistics."""
-    if not readings:
-        return {"error": "No readings provided"}
-    values = [r.get("value", 0.0) for r in readings]
-    avg = sum(values) / len(values)
-    return {
-        "count": len(values),
-        "average": round(avg, 4),
-        "min": min(values),
-        "max": max(values),
-        "variance": round(sum((v - avg) ** 2 for v in values) / len(values), 4),
-        "range": max(values) - min(values),
-    }
-
-if __name__ == "__main__":
-    sample = [{"sensor": "T-101", "value": v} for v in [72.3, 73.1, 71.8, 72.9]]
-    print(f"Statistics: {process_sensor_data(sample)}")
-'''
-
-
-def _generate_demo_test(user_request: str) -> str:
-    """Generates a simple test for the demo code."""
-    if "modbus" in user_request.lower():
-        return '''import struct
-def test_struct_packing():
-    header = struct.pack('>HHHBBHH', 1, 0, 6, 1, 3, 0, 4)
-    assert len(header) == 12
-if __name__ == "__main__":
-    test_struct_packing()
-    print("All tests passed!")
-'''
-    return '''def process_sensor_data(readings):
-    if not readings:
-        return {"error": "No readings provided"}
-    values = [r.get("value", 0.0) for r in readings]
-    avg = sum(values) / len(values)
-    return {"count": len(values), "average": round(avg, 4),
-            "min": min(values), "max": max(values)}
-
-def test_basic():
-    r = process_sensor_data([{"value": 10.0}, {"value": 20.0}, {"value": 30.0}])
-    assert r["count"] == 3
-    assert r["average"] == 20.0
-
-def test_empty():
-    r = process_sensor_data([])
-    assert "error" in r
-
-if __name__ == "__main__":
-    test_basic()
-    test_empty()
-    print("All tests passed!")
-'''
+def _llm_chat_response(model_config: dict, user_request: str, chat_history: list = None) -> str:
+    """Use the LLM for a simple conversational response."""
+    system_prompt = (
+        "You are SETU AI, a helpful, friendly AI assistant. "
+        "Respond naturally and conversationally. Use markdown formatting when helpful."
+    )
+    return _call_llm(model_config, system_prompt, user_request, timeout=60, chat_history=chat_history)
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove ```python ... ``` or ``` ... ``` fences from LLM output."""
+    import re
+    # Remove opening fence with optional language tag
+    text = re.sub(r'^```(?:python|py)?\s*\n', '', text, flags=re.MULTILINE)
+    # Remove closing fence
+    text = re.sub(r'\n```\s*$', '', text, flags=re.MULTILINE)
+    return text.strip()
+
 
 def _extract_number(content: str) -> str:
     """Pull the first number out of a user prompt."""

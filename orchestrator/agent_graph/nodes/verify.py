@@ -63,15 +63,31 @@ def verify_node(state: AgentState) -> dict:
                     detail = f"Numeric check failed: deviation {data.get('deviation', '?')} exceeds tolerance"
 
             elif task_type == "drafting":
-                # Check that retrieval returned relevant chunks
+                # Check that the LLM actually generated a response
+                generated = data.get("generated_text", data.get("draft", ""))
                 chunks = data.get("chunks", [])
-                if chunks and len(chunks) > 0:
-                    top_score = chunks[0].get("score", 0) if isinstance(chunks[0], dict) else 0
+                if generated:
                     passed = True
+                    detail = f"Draft generated successfully ({len(generated)} chars)"
+                    if chunks:
+                        detail += f" with {len(chunks)} reference chunks"
+                elif chunks and len(chunks) > 0:
+                    passed = True
+                    top_score = chunks[0].get("score", 0) if isinstance(chunks[0], dict) else 0
                     detail = f"Retrieved {len(chunks)} relevant chunks (top score: {top_score})"
                 else:
                     passed = False
-                    detail = "No relevant context found in knowledge base"
+                    detail = "Failed to generate draft — LLM may be unavailable"
+
+            elif task_type == "conversational":
+                # Check that the LLM generated a response
+                response = data.get("response", data.get("generated_text", ""))
+                if response:
+                    passed = True
+                    detail = f"Response generated ({len(response)} chars)"
+                else:
+                    passed = False
+                    detail = "Failed to generate response — LLM may be unavailable"
 
             else:
                 passed = latest_result.get("success", False)

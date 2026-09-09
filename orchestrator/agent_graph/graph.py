@@ -215,7 +215,7 @@ async def run_agent(task_input_dict: dict) -> AsyncGenerator[dict, None]:
         "task_type": "",
         "modality": task_input_dict.get("modality", "text"),
         "selected_model": {},
-        "messages": [],
+        "messages": task_input_dict.get("context", {}).get("chat_history", []),
         "plan": "",
         "tool_calls": [],
         "tool_results": [],

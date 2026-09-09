@@ -140,11 +140,25 @@ def generate_node(state: AgentState) -> dict:
                 f"• **Expected:** `{expected}`"
             )
         elif task_type == "drafting":
+            # Show the LLM-generated draft text
+            generated = latest_data.get("generated_text", latest_data.get("draft", ""))
             chunks = latest_data.get("chunks", [])
-            summary = f"Drafting complete — used {len(chunks)} reference chunks.{review_tag}"
-            for i, chunk in enumerate(chunks[:3], 1):
-                text = chunk.get("text", str(chunk))[:150] if isinstance(chunk, dict) else str(chunk)[:150]
-                summary += f"\n\n> **Reference {i}:**\n> {text}..."
+            if generated:
+                summary = generated
+                if needs_review:
+                    summary += "\n\n---\n*[NEEDS HUMAN REVIEW]*"
+            else:
+                summary = f"Drafting complete — used {len(chunks)} reference chunks.{review_tag}"
+                for i, chunk in enumerate(chunks[:3], 1):
+                    text = chunk.get("text", str(chunk))[:150] if isinstance(chunk, dict) else str(chunk)[:150]
+                    summary += f"\n\n> **Reference {i}:**\n> {text}..."
+        elif task_type == "conversational":
+            # Show the direct LLM response
+            response = latest_data.get("response", latest_data.get("generated_text", ""))
+            if response:
+                summary = response
+            else:
+                summary = "I'm sorry, I couldn't generate a response. The LLM service may be unavailable."
         else:
             summary = f"Task complete.{review_tag}"
 

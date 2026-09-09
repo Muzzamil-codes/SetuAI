@@ -31,7 +31,7 @@ def plan_node(state: AgentState) -> dict:
             "generate formatted approval note (.docx)"
         ),
         "codegen": (
-            "Generate Python code for the requested task → "
+            "Generate Python code for the requested task using the LLM → "
             "run code in sandboxed environment with test harness → "
             "verify tests pass → deliver code with test log"
         ),
@@ -41,10 +41,14 @@ def plan_node(state: AgentState) -> dict:
             "generate verification report (.xlsx)"
         ),
         "drafting": (
-            "Retrieve relevant context from SOP knowledge base → "
-            "draft document using retrieved evidence → "
-            "verify all claims are grounded in sources → "
-            "generate final approval note (.docx)"
+            "Retrieve relevant context from knowledge base (if available) → "
+            "generate response using LLM with retrieved context → "
+            "deliver formatted response"
+        ),
+        "conversational": (
+            "Process conversational request → "
+            "generate direct LLM response → "
+            "deliver response to user"
         )
     }
 
