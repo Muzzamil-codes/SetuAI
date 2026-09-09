@@ -41,10 +41,13 @@ def _get_model_config(state: dict) -> dict:
     return {}
 
 
-def _call_llm(model_config: dict, system_prompt: str, user_prompt: str,
-              timeout: int = 120, chat_history: list = None) -> str:
-    """Call the Ollama-compatible OpenAI API and return the text response."""
+async def _call_llm_async(model_config: dict, system_prompt: str, user_prompt: str,
+                          timeout: int = 120, chat_history: list = None,
+                          stream_callback=None) -> str:
+    """Call the Ollama-compatible OpenAI API asynchronously, with optional streaming."""
     import re
+    import json
+    import asyncio
 
     endpoint = model_config.get("endpoint", "")
     model_name = model_config.get("name", "deepseek-r1:8b")
@@ -64,39 +67,17 @@ def _call_llm(model_config: dict, system_prompt: str, user_prompt: str,
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 4096,
+        "stream": bool(stream_callback)
     }
 
-    def _extract_content(data: dict) -> str:
-        """Extract the actual response from the API response, handling DeepSeek's reasoning field."""
-        msg = data["choices"][0]["message"]
-        content = msg.get("content", "") or ""
-        reasoning = msg.get("reasoning", "") or ""
+    loop = asyncio.get_running_loop()
 
-        # Strip <think>...</think> blocks from content
-        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-
-        # If content is empty but reasoning exists (DeepSeek-R1 quirk),
-        # use the last paragraph of reasoning as a fallback
-        if not content and reasoning:
-            # The reasoning often ends with the actual answer
-            paragraphs = [p.strip() for p in reasoning.strip().split("\n\n") if p.strip()]
-            if paragraphs:
-                content = paragraphs[-1]
-
-        return content
-
-    try:
-        import requests
-        print(f"[tool_call] Calling LLM: {model_name} at {url}")
-        resp = requests.post(url, json=payload, timeout=timeout)
-        if resp.status_code == 200:
-            data = resp.json()
-            content = _extract_content(data)
-            print(f"[tool_call] LLM response: {len(content)} chars")
-            return content
-        else:
-            print(f"[tool_call] LLM HTTP error: {resp.status_code} - {resp.text[:200]}")
-    except ImportError:
+    def blocking_fetch():
+        print(f"[tool_call] Calling LLM: {model_name} at {url} (stream={bool(stream_callback)})")
+        full_content = ""
+        in_think = False
+        buffer = ""
+        
         import urllib.request
         req = urllib.request.Request(
             url,
@@ -104,28 +85,81 @@ def _call_llm(model_config: dict, system_prompt: str, user_prompt: str,
             headers={"Content-Type": "application/json"},
             method="POST"
         )
+        
         try:
-            print(f"[tool_call] Calling LLM (urllib): {model_name} at {url}")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    content = _extract_content(data)
-                    print(f"[tool_call] LLM response: {len(content)} chars")
-                    return content
+                    if stream_callback:
+                        for line in resp:
+                            if line:
+                                decoded = line.decode('utf-8').replace('data: ', '').strip()
+                                if not decoded or decoded == '[DONE]':
+                                    continue
+                                try:
+                                    data = json.loads(decoded)
+                                    chunk = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    # Fallback for some ollama raw streaming responses if format differs
+                                    if not chunk and "message" in data:
+                                        chunk = data["message"].get("content", "")
+                                    
+                                    full_content += chunk
+                                    
+                                    if not in_think:
+                                        buffer += chunk
+                                        if "<think>" in buffer:
+                                            # We entered a think block
+                                            idx = buffer.find("<think>")
+                                            safe_part = buffer[:idx]
+                                            if safe_part:
+                                                asyncio.run_coroutine_threadsafe(stream_callback(safe_part), loop)
+                                            in_think = True
+                                            buffer = buffer[idx + 7:]
+                                        elif len(buffer) > 7:
+                                            # Safe to yield everything except the last 7 chars
+                                            safe_len = len(buffer) - 7
+                                            asyncio.run_coroutine_threadsafe(stream_callback(buffer[:safe_len]), loop)
+                                            buffer = buffer[safe_len:]
+                                    else:
+                                        buffer += chunk
+                                        if "</think>" in buffer:
+                                            # We exited the think block
+                                            idx = buffer.find("</think>")
+                                            in_think = False
+                                            buffer = buffer[idx + 8:]
+                                except Exception:
+                                    pass
+                        # Yield any remaining buffer
+                        if buffer and not in_think:
+                            asyncio.run_coroutine_threadsafe(stream_callback(buffer), loop)
+                    else:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        msg = data["choices"][0]["message"]
+                        content = msg.get("content", "") or ""
+                        reasoning = msg.get("reasoning", "") or ""
+                        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                        if not content and reasoning:
+                            paragraphs = [p.strip() for p in reasoning.strip().split("\n\n") if p.strip()]
+                            if paragraphs:
+                                content = paragraphs[-1]
+                        full_content = content
+                        
+                    print(f"[tool_call] LLM response: {len(full_content)} chars")
+                else:
+                    print(f"[tool_call] LLM HTTP error: {resp.status}")
         except Exception as e:
-            print(f"[tool_call] LLM urllib error: {e}")
-    except Exception as e:
-        print(f"[tool_call] LLM request error: {e}")
+            print(f"[tool_call] LLM request error: {e}")
+            
+        return full_content
 
-    return ""
+    return await asyncio.to_thread(blocking_fetch)
 
 
 # ---------------------------------------------------------------------------
 # Main tool_call_node
 # ---------------------------------------------------------------------------
 
-def tool_call_node(state: AgentState) -> dict:
-    """Execute the appropriate tool based on task type."""
+async def tool_call_node(state: AgentState) -> dict:
+    """Execute the appropriate tool based on task type (Async)."""
     task_type = state.get("task_type", "drafting")
     task_input = state.get("task_input", {})
     task_id = state.get("task_id", "unknown")
@@ -140,6 +174,18 @@ def tool_call_node(state: AgentState) -> dict:
     tool_input_data = {}
     result_dict = {"success": False, "data": {}, "error": "No tool executed"}
 
+    from backend.gateway.websocket_manager import manager
+    
+    async def stream_callback(chunk: str):
+        if chunk:
+            payload = {
+                "task_id": task_id,
+                "step": "stream_chunk",
+                "payload": {"chunk": chunk},
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            await manager.broadcast_event(task_id, json.dumps(payload))
+
     try:
         if task_type == "extraction":
             tool_name = "vision"
@@ -153,8 +199,8 @@ def tool_call_node(state: AgentState) -> dict:
             chat_history = state.get("messages", [])
 
             # Actually call the LLM to generate code
-            code = _llm_generate_code(model_config, user_request, chat_history)
-            test_code = _llm_generate_tests(model_config, user_request, code)
+            code = await _llm_generate_code(model_config, user_request, chat_history, stream_callback)
+            test_code = await _llm_generate_tests(model_config, user_request, code)
 
             tool_input_data = {
                 "verification_type": "code",
@@ -179,7 +225,7 @@ def tool_call_node(state: AgentState) -> dict:
             rag_context = _try_retrieval(user_request)
 
             # Call LLM to actually draft the response
-            draft = _llm_draft_response(model_config, user_request, rag_context, chat_history)
+            draft = await _llm_draft_response(model_config, user_request, rag_context, chat_history, stream_callback)
 
             result_dict = {
                 "success": bool(draft),
@@ -209,7 +255,7 @@ def tool_call_node(state: AgentState) -> dict:
             chat_history = state.get("messages", [])
 
             # Direct LLM response for conversational prompts
-            response = _llm_chat_response(model_config, user_request, chat_history)
+            response = await _llm_chat_response(model_config, user_request, chat_history, stream_callback)
 
             result_dict = {
                 "success": bool(response),
@@ -296,27 +342,23 @@ def _try_retrieval(query: str) -> list:
 # LLM-powered generation functions
 # ---------------------------------------------------------------------------
 
-def _llm_generate_code(model_config: dict, user_request: str, chat_history: list = None) -> str:
+async def _llm_generate_code(model_config: dict, user_request: str, chat_history: list = None, stream_callback=None) -> str:
     """Use the LLM to generate Python code for the user's request."""
     system_prompt = (
         "You are an expert Python programmer. Generate clean, working Python code "
         "for the user's request. Output ONLY the Python code, no explanations, "
         "no markdown fences. The code should be complete and runnable."
     )
-    code = _call_llm(model_config, system_prompt, user_request, timeout=90, chat_history=chat_history)
+    code = await _call_llm_async(model_config, system_prompt, user_request, timeout=90, chat_history=chat_history, stream_callback=stream_callback)
 
     if code:
-        # Clean up: strip markdown fences if the model included them
         code = _strip_markdown_fences(code)
         return code
-
-    # Last resort: return a minimal placeholder (NOT the old hardcoded sensor code)
     return f'# Could not generate code — LLM unavailable\n# Request: {user_request}\nprint("LLM service is currently unavailable. Please try again.")\n'
 
 
-def _llm_generate_tests(model_config: dict, user_request: str,
-                         generated_code: str) -> str:
-    """Use the LLM to generate test code for the generated code."""
+async def _llm_generate_tests(model_config: dict, user_request: str, generated_code: str) -> str:
+    """Use the LLM to generate test code for the generated code (no streaming here)."""
     system_prompt = (
         "You are a Python testing expert. Given the following code, write a simple "
         "test script that validates it works correctly. Include a few test functions "
@@ -324,13 +366,11 @@ def _llm_generate_tests(model_config: dict, user_request: str,
         "Output ONLY the Python code, no explanations, no markdown fences."
     )
     user_prompt = f"Original request: {user_request}\n\nCode to test:\n{generated_code}"
-    tests = _call_llm(model_config, system_prompt, user_prompt, timeout=60)
+    tests = await _call_llm_async(model_config, system_prompt, user_prompt, timeout=60)
 
     if tests:
         tests = _strip_markdown_fences(tests)
         return tests
-
-    # Minimal fallback test
     return (
         "def test_runs():\n"
         "    print('Basic smoke test passed')\n\n"
@@ -340,8 +380,8 @@ def _llm_generate_tests(model_config: dict, user_request: str,
     )
 
 
-def _llm_draft_response(model_config: dict, user_request: str,
-                          rag_context: list, chat_history: list = None) -> str:
+async def _llm_draft_response(model_config: dict, user_request: str,
+                          rag_context: list, chat_history: list = None, stream_callback=None) -> str:
     """Use the LLM to draft a text response, optionally using RAG context."""
     context_text = ""
     if rag_context:
@@ -365,16 +405,16 @@ def _llm_draft_response(model_config: dict, user_request: str,
         )
         user_prompt = user_request
 
-    return _call_llm(model_config, system_prompt, user_prompt, timeout=90, chat_history=chat_history)
+    return await _call_llm_async(model_config, system_prompt, user_prompt, timeout=90, chat_history=chat_history, stream_callback=stream_callback)
 
 
-def _llm_chat_response(model_config: dict, user_request: str, chat_history: list = None) -> str:
+async def _llm_chat_response(model_config: dict, user_request: str, chat_history: list = None, stream_callback=None) -> str:
     """Use the LLM for a simple conversational response."""
     system_prompt = (
         "You are SETU AI, a helpful, friendly AI assistant. "
         "Respond naturally and conversationally. Use markdown formatting when helpful."
     )
-    return _call_llm(model_config, system_prompt, user_request, timeout=60, chat_history=chat_history)
+    return await _call_llm_async(model_config, system_prompt, user_request, timeout=60, chat_history=chat_history, stream_callback=stream_callback)
 
 
 # ---------------------------------------------------------------------------

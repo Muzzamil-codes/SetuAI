@@ -57,7 +57,12 @@ class SimpleGraph:
                 break
 
             try:
-                updates = func(state)
+                import asyncio
+                if asyncio.iscoroutinefunction(func):
+                    updates = await func(state)
+                else:
+                    updates = func(state)
+                
                 state.update(updates)
 
                 # Yield every NEW trace event (not just the last one)
@@ -156,7 +161,19 @@ def build_graph():
     workflow.add_node("verify", verify_node)
     workflow.add_node("generate", generate_node)
 
-    workflow.add_edge("classify", "plan")
+    def classify_condition(state: AgentState) -> str:
+        if state.get("task_type") == "conversational":
+            return "conversational"
+        return "complex"
+
+    workflow.add_conditional_edge(
+        "classify",
+        classify_condition,
+        {
+            "conversational": "tool_call",
+            "complex": "plan"
+        }
+    )
     workflow.add_edge("plan", "tool_call")
     workflow.add_edge("tool_call", "verify")
 
@@ -164,9 +181,16 @@ def build_graph():
         status = state.get("verification_status")
         retries = state.get("retry_count", 0)
         max_retries = state.get("max_retries", 2)
+        task_type = state.get("task_type", "")
 
         if status == "passed":
             return "passed"
+        
+        # Do not blindly retry conversational/drafting tasks if the LLM is just down/empty.
+        # Retries are meant for things like code execution failing or numeric verification failing.
+        if task_type in ["conversational", "drafting"] and status == "failed":
+            return "exhausted"
+
         elif status == "failed" and retries < max_retries:
             return "retry"
         else:
@@ -232,7 +256,7 @@ async def run_agent(task_input_dict: dict) -> AsyncGenerator[dict, None]:
 
     try:
         if HAS_LANGGRAPH:
-            for output in graph.stream(initial_state):
+            async for output in graph.astream(initial_state):
                 for _node_name, state_update in output.items():
                     events = state_update.get("trace_events", [])
                     for event in events:

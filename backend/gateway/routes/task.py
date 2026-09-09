@@ -18,6 +18,9 @@ async def run_orchestrator(task_id: str, task_input_dict: dict):
     try:
         from orchestrator.agent_graph.graph import run_agent
         
+        # Give the frontend WebSocket a moment to connect so it doesn't miss the first 'classify' event
+        await asyncio.sleep(0.5)
+
         async for event_dict in run_agent(task_input_dict):
             event_dict["task_id"] = task_id
             
@@ -30,7 +33,8 @@ async def run_orchestrator(task_id: str, task_input_dict: dict):
             event_json = event.model_dump_json()
             await manager.broadcast_event(task_id, event_json)
             
-            await asyncio.sleep(0.3)
+            if event.step != "stream_chunk":
+                await asyncio.sleep(0.2)
             
             if event.step == "done":
                 payload = event.payload

@@ -1,0 +1,32 @@
+STANDARD OPERATING PROCEDURE
+Document ID: SOP-MECH-204
+Revision: 3.1
+Date Effective: 2024-01-15
+Department: Mechanical Maintenance
+Title: Overhaul and Maintenance of Centrifugal Pumps (API 610)
+
+1. PURPOSE
+This procedure outlines the steps for the safe teardown, inspection, and reassembly of API 610 centrifugal pumps used in hydrocarbon service within the refinery.
+
+2. PRE-REQUISITES & SAFETY
+2.1. Obtain a valid Cold Work Permit and Confined Space Entry permit (if applicable).
+2.2. Ensure the pump is completely isolated from the process line using positive blinding (Slip Blinds).
+2.3. Verify Lockout/Tagout (LOTO) is applied to the motor breaker at the substation.
+2.4. Drain and purge the pump casing. H2S levels must be 0 ppm and LEL must be 0% before proceeding.
+
+3. ACCEPTANCE CRITERIA & TOLERANCES
+3.1. Bearing housing vibration limit: < 3.0 mm/s RMS.
+3.2. Shaft straightness tolerance: Maximum runout of 0.05 mm (0.002 inches).
+3.3. Mechanical seal face flatness: Within 2 light bands.
+3.4. Impeller dynamic balancing: API 610 Grade G2.5.
+
+4. INSPECTION PROCEDURE
+4.1. Remove the coupling guard and disconnect the coupling.
+4.2. Unbolt the mechanical seal gland plate.
+4.3. Pull the bearing housing and rotor assembly out of the casing (back pull-out design).
+4.4. Inspect the impeller for cavitation pitting, erosion, or corrosion.
+4.5. Measure shaft runout using a dial indicator. If runout exceeds 0.05 mm, the shaft must be replaced or machined.
+4.6. Document all findings in the Maintenance Inspection Report.
+
+5. APPROVAL & ESCALATION
+If shaft runout exceeds tolerance or severe cavitation is found on the impeller, an Approval Note must be drafted by the reliability engineer and approved by the Maintenance Superintendent before ordering replacement parts exceeding $5,000 in value.

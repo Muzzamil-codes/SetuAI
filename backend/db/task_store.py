@@ -18,6 +18,64 @@ def init_db():
             error TEXT
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversations (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            model TEXT NOT NULL,
+            messages TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def save_conversation(conv_data: Dict[str, Any]):
+    """Saves or updates a conversation."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO conversations (id, title, model, messages, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET 
+            title=excluded.title,
+            model=excluded.model,
+            messages=excluded.messages,
+            created_at=excluded.created_at
+    """, (
+        conv_data["id"],
+        conv_data["title"],
+        conv_data["model"],
+        json.dumps(conv_data["messages"]),
+        conv_data.get("createdAt", "")
+    ))
+    conn.commit()
+    conn.close()
+
+def get_conversations() -> list:
+    """Retrieves all conversations, sorted by created_at descending."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, title, model, messages, created_at FROM conversations ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    
+    result = []
+    for row in rows:
+        result.append({
+            "id": row[0],
+            "title": row[1],
+            "model": row[2],
+            "messages": json.loads(row[3]) if row[3] else [],
+            "createdAt": row[4]
+        })
+    return result
+
+def delete_conversation(conv_id: str):
+    """Deletes a conversation by ID."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
     conn.commit()
     conn.close()
 
