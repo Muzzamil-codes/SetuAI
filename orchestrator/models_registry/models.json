@@ -5,7 +5,7 @@
     "role": "codegen",
     "quant": "4-bit",
     "vram_mb": 6500,
-    "endpoint": "http://localhost:11434/v1"
+    "endpoint": "http://10.124.135.159:11434/v1"
   },
   {
     "name": "deepseek-r1:8b",
@@ -13,7 +13,7 @@
     "role": "reasoning",
     "quant": "4-bit",
     "vram_mb": 5800,
-    "endpoint": "http://localhost:11434/v1"
+    "endpoint": "http://10.124.135.159:11434/v1"
   },
   {
     "name": "llama3.2-vision",
@@ -21,6 +21,6 @@
     "role": "extraction",
     "quant": "4-bit",
     "vram_mb": 7200,
-    "endpoint": "http://localhost:11434/v1"
+    "endpoint": "http://10.124.135.159:11434/v1"
   }
 ]

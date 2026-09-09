@@ -11,6 +11,8 @@ team members' code) by writing a plain text output.
 from orchestrator.agent_graph.state import AgentState
 from datetime import datetime, timezone
 import os
+from artifact_factory.docx_builder import generate_docx
+from artifact_factory.xlsx_builder import generate_xlsx
 
 
 def _should_produce_artifact(task_input: dict, task_type: str) -> bool:
@@ -75,38 +77,77 @@ def generate_node(state: AgentState) -> dict:
         os.makedirs(outputs_dir, exist_ok=True)
 
         try:
-            if _wants_slides(task_input):
-                artifact = _build_pptx(task_id, task_type, content,
-                                       latest_data, needs_review, outputs_dir)
-            elif task_type in ["extraction", "drafting"]:
-                artifact = _build_docx(task_id, task_type, content,
-                                       latest_data, needs_review, outputs_dir)
+            artifact = None
+            if task_type in ["extraction", "drafting"]:
+                data = {
+                    "title": f"Approval Note — {content[:80]}",
+                    "company": "Setu",
+                    "reviewer": "AI Agent",
+                    "department": "Engineering",
+                    "findings": [],
+                    "recommendations": []
+                }
+                result = generate_docx(data, outputs_dir)
+                if result.get("success"):
+                    artifact = {
+                        "type": "docx",
+                        "filename": result.get("filename"),
+                        "path": result.get("path")
+                    }
             elif task_type == "numeric_verify":
-                artifact = _build_xlsx(task_id, content, latest_data,
-                                       needs_review, outputs_dir)
+                data = {
+                    "title": f"Verification Report - {content[:60]}",
+                    "findings": []
+                }
+                result = generate_xlsx(data, outputs_dir)
+                if result.get("success"):
+                    artifact = {
+                        "type": "xlsx",
+                        "filename": result.get("filename"),
+                        "path": result.get("path")
+                    }
             elif task_type == "codegen":
-                artifact = _build_code(task_id, latest_data,
-                                       needs_review, outputs_dir)
+                filename = f"{task_id}_code.py"
+                path = os.path.join(outputs_dir, filename)
+                code = latest_data.get("generated_code", "# No code generated\n")
+                with open(path, "w") as f:
+                    f.write(code)
+                artifact = {
+                    "type": "py",
+                    "filename": filename,
+                    "path": path
+                }
             else:
-                artifact = _build_text(task_id, content, outputs_dir)
+                filename = f"{task_id}_output.txt"
+                path = os.path.join(outputs_dir, filename)
+                with open(path, "w") as f:
+                    f.write(content)
+                artifact = {
+                    "type": "txt",
+                    "filename": filename,
+                    "path": path
+                }
 
-            artifacts.append(artifact)
-            review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
-            summary = (
-                f"Generated {artifact.get('type', 'file')}: "
-                f"{artifact.get('filename', 'unknown')}{review_tag}"
-            )
+            if artifact:
+                artifacts.append(artifact)
+                review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
+                summary = (
+                    f"Generated {artifact.get('type', 'file')}: "
+                    f"{artifact.get('filename', 'unknown')}{review_tag}"
+                )
 
-            # Emit 'generate' event for artifact creation
-            trace_events.append({
-                "task_id": task_id,
-                "step": "generate",
-                "payload": {
-                    "artifact_type": artifact.get("type", "unknown"),
-                    "filename": artifact.get("filename", "")
-                },
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+                # Emit 'generate' event for artifact creation
+                trace_events.append({
+                    "task_id": task_id,
+                    "step": "generate",
+                    "payload": {
+                        "artifact_type": artifact.get("type", "unknown"),
+                        "filename": artifact.get("filename", "")
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+            else:
+                summary = "Failed to generate artifact."
 
         except Exception as e:
             summary = f"Failed to generate artifact: {str(e)}"
@@ -180,191 +221,4 @@ def generate_node(state: AgentState) -> dict:
     }
 
 
-def _build_docx(task_id, task_type, content, data, needs_review, outputs_dir):
-    """Try the docx tool; fall back to plain text."""
-    # Build findings from tool results
-    findings = []
-    if task_type == "extraction":
-        fields = data.get("fields", data.get("extracted_fields", {}))
-        if isinstance(fields, dict):
-            for field_name, value in fields.items():
-                findings.append({
-                    "field": field_name.replace("_", " ").title(),
-                    "value": str(value),
-                    "status": "Normal",
-                    "source": "VLM/OCR Extraction"
-                })
-    elif task_type == "drafting":
-        for i, chunk in enumerate(data.get("chunks", [])[:5]):
-            text = chunk.get("text", str(chunk)) if isinstance(chunk, dict) else str(chunk)
-            findings.append({
-                "field": f"Reference {i + 1}",
-                "value": text[:200],
-                "status": "Normal",
-                "source": chunk.get("source", "KB") if isinstance(chunk, dict) else "KB"
-            })
 
-    ref_no = f"SETU-{task_id[:8].upper()}"
-    review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
-
-    docx_input = {
-        "data": {
-            "title": f"Approval Note — {content[:80]}",
-            "reference_no": ref_no,
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            "subject": content[:200],
-            "findings": findings,
-            "recommendation": f"All parameters within limits.{review_tag}",
-            "summary": f"AI-generated report for: {content[:300]}",
-            "provenance_notes": [
-                f"Task ID: {task_id}",
-                "Values cross-referenced against SOP database",
-                f"Verification: {'PASSED' if not needs_review else 'NEEDS REVIEW'}"
-            ]
-        }
-    }
-
-    try:
-        from tools.tool_registry import get_tool
-        tool = get_tool("docx")
-        result = tool.run(docx_input)
-        if result.success:
-            file_path = result.data.get("file_path") or result.data.get("path") or f"outputs/{ref_no}_approval_note.docx"
-            filename = result.data.get("filename") or os.path.basename(file_path)
-            return {
-                "type": "docx",
-                "filename": filename,
-                "path": file_path
-            }
-    except Exception:
-        pass
-
-    # Fallback: plain text
-    filename = f"{ref_no}_approval_note.txt"
-    path = os.path.join(outputs_dir, filename)
-    with open(path, "w") as f:
-        f.write(f"SETU Approval Note | Ref: {ref_no}\n{'='*50}\n")
-        f.write(f"Subject: {content[:200]}\n\nFindings:\n")
-        for i, finding in enumerate(findings, 1):
-            f.write(f"  {i}. {finding['field']}: {finding['value']} "
-                    f"[{finding['status']}] (Source: {finding['source']})\n")
-        f.write(f"\nRecommendation: All parameters within limits.{review_tag}\n")
-    return {"type": "docx", "filename": filename, "path": f"outputs/{filename}"}
-
-
-def _build_xlsx(task_id, content, data, needs_review, outputs_dir):
-    """Try the xlsx tool; fall back to plain text."""
-    xlsx_input = {
-        "data": {
-            "title": f"Verification Report - {content[:60]}",
-            "headers": ["Parameter", "Measured", "Expected", "Tolerance",
-                        "Deviation", "Status"],
-            "rows": [[
-                "Pressure",
-                str(data.get("computed_value", "N/A")),
-                str(data.get("expected", "N/A")),
-                f"±{data.get('tolerance', 0.1)} bar",
-                str(data.get("deviation", "N/A")),
-                "PASS" if data.get("passed", True) else "FAIL"
-            ]],
-            "formula_columns": {},
-            "highlight_rules": []
-        }
-    }
-
-    try:
-        from tools.tool_registry import get_tool
-        tool = get_tool("xlsx")
-        result = tool.run(xlsx_input)
-        if result.success:
-            file_path = result.data.get("file_path") or result.data.get("path") or f"outputs/{task_id}_report.xlsx"
-            filename = result.data.get("filename") or os.path.basename(file_path)
-            return {
-                "type": "xlsx",
-                "filename": filename,
-                "path": file_path
-            }
-    except Exception:
-        pass
-
-    filename = f"{task_id}_report.txt"
-    path = os.path.join(outputs_dir, filename)
-    with open(path, "w") as f:
-        f.write(f"Verification Report\n{content}\nResult: {data}\n")
-    return {"type": "xlsx", "filename": filename, "path": f"outputs/{filename}"}
-
-
-def _build_code(task_id, data, needs_review, outputs_dir):
-    """Write generated code to a file."""
-    code = data.get("generated_code", "# No code generated\n")
-    test_log = data.get("stdout", "")
-    review_tag = "# WARNING: NEEDS HUMAN REVIEW\n" if needs_review else ""
-
-    filename = f"{task_id}_code.py"
-    path = os.path.join(outputs_dir, filename)
-    with open(path, "w") as f:
-        f.write(f"# Generated by Setu AI — Task: {task_id}\n{review_tag}")
-        if test_log:
-            f.write(f"# Test log: {test_log[:300]}\n")
-        f.write(f"\n{code}")
-    return {"type": "py", "filename": filename, "path": f"outputs/{filename}"}
-
-
-def _build_text(task_id, content, outputs_dir):
-    """Generic text output."""
-    filename = f"{task_id}_output.txt"
-    path = os.path.join(outputs_dir, filename)
-    with open(path, "w") as f:
-        f.write(f"Setu AI Output | Task: {task_id}\n\n{content}\n")
-    return {"type": "txt", "filename": filename, "path": f"outputs/{filename}"}
-
-
-def _build_pptx(task_id, task_type, content, data, needs_review, outputs_dir):
-    """Try the pptx tool; fall back to plain text."""
-    findings = []
-    if task_type == "extraction":
-        fields = data.get("fields", data.get("extracted_fields", {}))
-        if isinstance(fields, dict):
-            for field_name, value in fields.items():
-                findings.append({
-                    "field": field_name.replace("_", " ").title(),
-                    "value": str(value),
-                    "status": "Normal"
-                })
-    elif task_type == "drafting":
-        for i, chunk in enumerate(data.get("chunks", [])[:5]):
-            text = chunk.get("text", str(chunk)) if isinstance(chunk, dict) else str(chunk)
-            findings.append({
-                "field": f"Reference {i + 1}",
-                "value": text[:200],
-                "status": "Normal"
-            })
-    
-    review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
-    pptx_input = {
-        "data": {
-            "title": f"Presentation — {content[:80]}",
-            "company": "SETU",
-            "reviewer": "AI Generated",
-            "department": "Engineering",
-            "findings": findings,
-            "recommendations": [f"AI-generated summary for: {content[:200]}{review_tag}"]
-        }
-    }
-    
-    try:
-        from tools.tool_registry import get_tool
-        tool = get_tool("pptx")
-        result = tool.run(pptx_input)
-        if result.success:
-            file_path = result.data.get("file_path") or result.data.get("path", "")
-            filename = result.data.get("filename") or os.path.basename(file_path)
-            return {"type": "pptx", "filename": filename, "path": file_path}
-    except Exception:
-        pass
-    
-    filename = f"{task_id}_presentation.txt"
-    path = os.path.join(outputs_dir, filename)
-    with open(path, "w") as f:
-        f.write(f"Presentation: {content[:200]}\n")
-    return {"type": "pptx", "filename": filename, "path": f"outputs/{filename}"}

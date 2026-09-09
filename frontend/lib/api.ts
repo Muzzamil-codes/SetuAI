@@ -36,3 +36,55 @@ export async function saveModels(models: any[]): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to save models");
 }
+
+// ---- Knowledge Base / RAG APIs ----
+
+export async function getKnowledgeFiles(): Promise<any[]> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/files`);
+  if (!res.ok) throw new Error('Failed to fetch knowledge files');
+  return res.json();
+}
+
+export async function uploadKnowledgeFile(file: File): Promise<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/upload`, { method: 'POST', body: formData });
+  if (!res.ok) throw new Error('Failed to upload knowledge file');
+  return res.json();
+}
+
+export async function deleteKnowledgeFile(filename: string): Promise<void> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete knowledge file');
+}
+
+export async function reindexKnowledge(): Promise<any> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/reindex`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to reindex knowledge base');
+  return res.json();
+}
+
+export async function queryKnowledge(query: string, topK: number = 5): Promise<any> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, top_k: topK }),
+  });
+  if (!res.ok) throw new Error('Failed to query knowledge base');
+  return res.json();
+}
+
+export async function getEmbeddingConfig(): Promise<any> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/embedding-config`);
+  if (!res.ok) throw new Error('Failed to fetch embedding config');
+  return res.json();
+}
+
+export async function saveEmbeddingConfig(config: any): Promise<void> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/knowledge/embedding-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error('Failed to save embedding config');
+}

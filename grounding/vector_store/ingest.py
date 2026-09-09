@@ -20,18 +20,46 @@ def chunk_text(text: str, chunk_size: int = 250) -> list[str]:
 
 def ingest_directory(sops_dir: str = "data/sops"):
     collection = get_chroma_collection()
-    files = glob.glob(os.path.join(sops_dir, "*.txt"))
+    files = glob.glob(os.path.join(sops_dir, "*"))
     
     documents = []
     metadatas = []
     ids = []
     
     for file_path in files:
+        if os.path.isdir(file_path):
+            continue
+            
         filename = os.path.basename(file_path)
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        ext = os.path.splitext(filename)[1].lower()
+        text = ""
         
-        chunks = chunk_text(content)
+        if ext in ['.txt', '.md', '.csv', '.json']:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+        elif ext == '.pdf':
+            try:
+                import fitz
+                doc = fitz.open(file_path)
+                for page in doc:
+                    text += page.get_text()
+            except ImportError:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+        elif ext == '.docx':
+            try:
+                import docx
+                doc = docx.Document(file_path)
+                for para in doc.paragraphs:
+                    text += para.text + "\n"
+            except ImportError:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+        else:
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                text = f.read()
+                
+        chunks = chunk_text(text)
         for idx, chunk in enumerate(chunks):
             doc_id = f"{filename}_chunk_{idx}"
             documents.append(chunk)
@@ -42,7 +70,7 @@ def ingest_directory(sops_dir: str = "data/sops"):
         collection.upsert(documents=documents, metadatas=metadatas, ids=ids)
         print(f"✅ Ingestion complete: {len(documents)} chunks from {len(files)} files stored in ChromaDB.")
     else:
-        print("⚠️ No .txt files found in", sops_dir)
+        print("⚠️ No valid files found or chunks generated in", sops_dir)
 
 if __name__ == "__main__":
     ingest_directory()

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.db.task_store import init_db
-from backend.gateway.routes import task, upload, settings
+from backend.gateway.routes import task, upload, settings, knowledge
 
 
 @asynccontextmanager
@@ -37,6 +37,7 @@ app.add_middleware(
 app.include_router(task.router)
 app.include_router(upload.router)
 app.include_router(settings.router)
+app.include_router(knowledge.router)
 
 # Serve generated artifacts as static files
 app.mount("/outputs", StaticFiles(directory="outputs"), name="outputs")
