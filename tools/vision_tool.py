@@ -20,6 +20,8 @@ def run(input_data: dict) -> ToolResult:
       - 'extract_mode': 'both' (default), 'vlm', or 'ocr'
     """
     image_path = input_data.get("image_path")
+    user_prompt = input_data.get("user_prompt")
+    
     if not image_path:
         return ToolResult(success=False, error="image_path is required")
         
@@ -32,17 +34,14 @@ def run(input_data: dict) -> ToolResult:
         # we run the async vlm_client via asyncio.run (or get_event_loop)
         try:
             loop = asyncio.get_running_loop()
-            # If we're already in an event loop (e.g., inside run_agent), we might need to handle this differently
-            # For simplicity in this demo, let's just assume we can call the stub directly or run it
             if loop.is_running():
-                # For MVP with stubs, we'll just mock the await here to avoid event loop issues
-                extracted_fields = extract_fields_vlm(image_path).__await__().send(None)
+                extracted_fields = extract_fields_vlm(image_path, user_prompt).__await__().send(None)
             else:
-                extracted_fields = asyncio.run(extract_fields_vlm(image_path))
+                extracted_fields = asyncio.run(extract_fields_vlm(image_path, user_prompt))
         except StopIteration as e:
             extracted_fields = e.value
         except Exception:
-            extracted_fields = asyncio.run(extract_fields_vlm(image_path))
+            extracted_fields = asyncio.run(extract_fields_vlm(image_path, user_prompt))
 
         ocr_results = extract_text_ocr(image_path)
         provenance = link_provenance(extracted_fields, ocr_results, tiles)

@@ -15,7 +15,7 @@ class TraceEvent(BaseModel):
     """Streamed live from backend to frontend over WebSocket as the AI agent works."""
     task_id: str
     step: Literal[
-        "classify", "plan", "tool_call", "verify_pass",
+        "manager", "classify", "plan", "tool_call", "verify_pass",
         "verify_fail", "retry", "generate", "done", "error",
         "stream_chunk"
     ]

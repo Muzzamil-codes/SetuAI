@@ -12,6 +12,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:800
 
 function StepBadge({ step }: { step: string }) {
   const colors: Record<string, string> = {
+    manager: "bg-purple-50 text-purple-700 border border-purple-200",
     classify: "bg-[#E5E3DD] text-[#6F6D68] border border-[#DDDAD3]",
     plan: "bg-[#E5E3DD] text-[#6F6D68] border border-[#DDDAD3]",
     tool_call: "bg-[#E5E3DD] text-[#6F6D68] border border-[#DDDAD3]",
@@ -36,7 +37,7 @@ function ArtifactCard({ artifact }: { artifact: ArtifactRef }) {
                <File className="w-4 h-4 text-[#6F6D68]" />;
   
   const handleDownload = () => {
-    const url = `${BACKEND_URL}/download/${artifact.path}`;
+    const url = `${BACKEND_URL}/download/${artifact.filename}`;
     window.open(url, "_blank");
   };
 
@@ -59,8 +60,8 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   const artifacts = message.artifacts || [];
   const hasTrace = traceEvents.length > 0;
 
-  const classifyEvent = traceEvents.find(e => e.step === "classify");
-  const selectedModelName = classifyEvent?.payload?.selected_model?.name;
+  const modelEvent = traceEvents.find(e => e.payload?.selected_model?.name || e.step === "manager" || e.step === "classify");
+  const selectedModelName = modelEvent?.payload?.selected_model?.name;
 
   return (
     <div className={`flex gap-4 px-4 py-6 ${isUser ? "justify-end" : "justify-start"}`}>
@@ -135,6 +136,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                   <div key={i} className="flex items-start gap-2 text-[11px] font-mono text-[var(--foreground-muted)]">
                     <StepBadge step={event.step} />
                     <span className="truncate mt-0.5">
+                      {event.step === "manager" && `→ SetuAI Manager (${event.payload?.selected_model?.name || 'deepseek-r1:8b'})`}
                       {event.step === "classify" && `→ ${event.payload?.task_type} (Model: ${event.payload?.selected_model?.name || 'auto'})`}
                       {event.step === "plan" && `→ ${(event.payload?.plan || "").slice(0, 80)}...`}
                       {event.step === "tool_call" && `→ ${event.payload?.tool_name}`}

@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 def plan_node(state: AgentState) -> dict:
     """Generate an execution plan based on task type."""
-    task_type = state.get("task_type", "drafting")
+    task_type = state.get("task_type", "document_generation")
     task_id = state.get("task_id", "unknown")
     retry_count = state.get("retry_count", 0)
     error_context = ""
@@ -30,7 +30,16 @@ def plan_node(state: AgentState) -> dict:
             "cross-verify extracted values against SOP database → "
             "generate formatted approval note (.docx)"
         ),
-        "codegen": (
+        "spreadsheet_generation": (
+            "Extract structured data from uploaded image/document using VLM → "
+            "format data into tables → "
+            "generate Excel workbook (.xlsx)"
+        ),
+        "image_analysis": (
+            "Analyze uploaded image using Vision-Language Model → "
+            "stream response to user directly without generating artifacts"
+        ),
+        "code_generation": (
             "Generate Python code for the requested task using the LLM → "
             "run code in sandboxed environment with test harness → "
             "verify tests pass → deliver code with test log"
@@ -40,10 +49,18 @@ def plan_node(state: AgentState) -> dict:
             "verify calculation with SymPy against known tolerances → "
             "generate verification report (.xlsx)"
         ),
-        "drafting": (
-            "Retrieve relevant context from knowledge base (if available) → "
-            "generate response using LLM with retrieved context → "
-            "deliver formatted response"
+        "document_generation": (
+            "Check SOP knowledge base for relevant procedures → "
+            "synthesize structured document parameters → "
+            "call docx tool to generate official document (.docx) → "
+            "verify generated document integrity → "
+            "summarize key provisions for the user"
+        ),
+        "spreadsheet_generation": (
+            "Compile structured tabular data → "
+            "call xlsx tool to generate Excel workbook (.xlsx) → "
+            "verify spreadsheet integrity → "
+            "present data summary to user"
         ),
         "conversational": (
             "Process conversational request → "
@@ -52,7 +69,7 @@ def plan_node(state: AgentState) -> dict:
         )
     }
 
-    plan = plans.get(task_type, plans["drafting"]) + error_context
+    plan = plans.get(task_type, plans["document_generation"]) + error_context
 
     trace_events = list(state.get("trace_events", []))
     trace_events.append({

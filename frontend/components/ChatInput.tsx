@@ -10,12 +10,14 @@ export interface ModelOption {
 interface ChatInputProps {
   onSend: (message: string, file: File | null) => void;
   disabled?: boolean;
+  isGenerating?: boolean;
+  onStop?: () => void;
   model: string;
   onModelChange: (model: string) => void;
   availableModels: ModelOption[];
 }
 
-export default function ChatInput({ onSend, disabled, model, onModelChange, availableModels = [] }: ChatInputProps) {
+export default function ChatInput({ onSend, disabled, isGenerating, onStop, model, onModelChange, availableModels = [] }: ChatInputProps) {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -24,6 +26,7 @@ export default function ChatInput({ onSend, disabled, model, onModelChange, avai
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!text.trim() && !file) return;
+    if (isGenerating) return;
     onSend(text.trim(), file);
     setText("");
     setFile(null);
@@ -81,17 +84,18 @@ export default function ChatInput({ onSend, disabled, model, onModelChange, avai
             
             <div className="flex items-center gap-1">
               {/* File attach */}
-              <label className="cursor-pointer p-2 rounded-xl text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent-light)]/50 transition">
+              <label className={`cursor-pointer p-2 rounded-xl transition ${isGenerating ? 'opacity-50 cursor-not-allowed text-[var(--foreground-muted)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent-light)]/50'}`}>
                 <Paperclip className="w-4 h-4" />
-                <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
+                <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" disabled={isGenerating} />
               </label>
 
               {/* Model selector */}
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setShowModelDropdown(!showModelDropdown)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent-light)]/50 transition"
+                  onClick={() => !isGenerating && setShowModelDropdown(!showModelDropdown)}
+                  disabled={isGenerating}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium transition ${isGenerating ? 'opacity-50 cursor-not-allowed text-[var(--foreground-muted)]' : 'text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent-light)]/50'}`}
                 >
                   <Sparkles className="w-3.5 h-3.5 opacity-70" />
                   <span>{selectedLabel}</span>
@@ -117,14 +121,25 @@ export default function ChatInput({ onSend, disabled, model, onModelChange, avai
               </div>
             </div>
 
-            {/* Send button */}
-            <button
-              type="submit"
-              disabled={disabled || (!text.trim() && !file)}
-              className="p-2.5 rounded-xl bg-[var(--accent)] text-white hover:bg-[#1a1a1a] disabled:opacity-30 disabled:hover:bg-[var(--accent)] disabled:cursor-not-allowed transition-all transform active:scale-95 shadow-sm"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+            {/* Send or Stop button */}
+            {isGenerating ? (
+              <button
+                type="button"
+                onClick={onStop}
+                className="p-2.5 px-3 rounded-xl bg-zinc-800 border border-zinc-700 text-white hover:bg-zinc-700 transition-all shadow-sm flex items-center gap-2"
+              >
+                <div className="w-2.5 h-2.5 bg-white rounded-[2px]" />
+                <span className="text-[12px] font-medium pr-1">Stop</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={disabled || (!text.trim() && !file)}
+                className="p-2.5 rounded-xl bg-[var(--accent)] text-white hover:bg-[#1a1a1a] disabled:opacity-30 disabled:hover:bg-[var(--accent)] disabled:cursor-not-allowed transition-all transform active:scale-95 shadow-sm"
+              >
+                <Send className="w-4 h-4 ml-0.5" />
+              </button>
+            )}
           </div>
         </div>
 

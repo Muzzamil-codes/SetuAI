@@ -42,7 +42,7 @@ def verify_node(state: AgentState) -> dict:
                     passed = False
                     detail = "No fields extracted from document"
 
-            elif task_type == "codegen":
+            elif task_type in ["code_generation", "codegen"]:
                 # Check sandbox test result
                 if data.get("passed", False):
                     passed = True
@@ -62,22 +62,40 @@ def verify_node(state: AgentState) -> dict:
                     passed = False
                     detail = f"Numeric check failed: deviation {data.get('deviation', '?')} exceeds tolerance"
 
-            elif task_type == "drafting":
-                # Check that the LLM actually generated a response
-                generated = data.get("generated_text", data.get("draft", ""))
-                chunks = data.get("chunks", [])
-                if generated:
+            elif task_type in ["document_generation", "drafting"]:
+                import os
+                artifact = data.get("artifact", {})
+                path = data.get("path") or data.get("file_path") or artifact.get("path")
+                filename = data.get("filename") or artifact.get("filename", "document.docx")
+
+                if path and os.path.exists(path) and os.path.getsize(path) > 0:
                     passed = True
-                    detail = f"Draft generated successfully ({len(generated)} chars)"
-                    if chunks:
-                        detail += f" with {len(chunks)} reference chunks"
-                elif chunks and len(chunks) > 0:
+                    size_kb = round(os.path.getsize(path) / 1024, 1)
+                    sop_note = " (SOP aligned)" if data.get("sop_used") else ""
+                    detail = f"Verified {filename} ({size_kb} KB) generated successfully{sop_note}"
+                else:
+                    # Fallback check for raw text draft
+                    generated = data.get("generated_text", data.get("draft", ""))
+                    if generated:
+                        passed = True
+                        detail = f"Draft generated successfully ({len(generated)} chars)"
+                    else:
+                        passed = False
+                        detail = latest_result.get("error", "Failed to generate document artifact")
+
+            elif task_type in ["spreadsheet_generation"]:
+                import os
+                artifact = data.get("artifact", {})
+                path = data.get("path") or data.get("file_path") or artifact.get("path")
+                filename = data.get("filename") or artifact.get("filename", "spreadsheet.xlsx")
+
+                if path and os.path.exists(path) and os.path.getsize(path) > 0:
                     passed = True
-                    top_score = chunks[0].get("score", 0) if isinstance(chunks[0], dict) else 0
-                    detail = f"Retrieved {len(chunks)} relevant chunks (top score: {top_score})"
+                    size_kb = round(os.path.getsize(path) / 1024, 1)
+                    detail = f"Verified {filename} ({size_kb} KB) generated successfully"
                 else:
                     passed = False
-                    detail = "Failed to generate draft — LLM may be unavailable"
+                    detail = latest_result.get("error", "Failed to generate spreadsheet artifact")
 
             elif task_type == "conversational":
                 # Check that the LLM generated a response
@@ -91,7 +109,7 @@ def verify_node(state: AgentState) -> dict:
 
             else:
                 passed = latest_result.get("success", False)
-                detail = "Generic verification"
+                detail = "Generic verification passed" if passed else latest_result.get("error", "Verification failed")
 
     except Exception as e:
         passed = False

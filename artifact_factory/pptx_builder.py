@@ -31,40 +31,45 @@ def generate_pptx(data: dict, output_dir: str = "outputs") -> Dict[str, Any]:
         slide = prs.slides.add_slide(prs.slide_layouts[0])
         slide.shapes.title.text = data.get("title", "Presentation")
         slide.placeholders[1].text = (
-            f"Company: {data.get('company', 'N/A')}\n"
-            f"Reviewer: {data.get('reviewer', 'N/A')}\n"
+            f"Company: {data.get('company_or_org', data.get('company', 'N/A'))}\n"
+            f"Presenter: {data.get('signatory', data.get('reviewer', 'N/A'))}\n"
             f"Department: {data.get('department', 'N/A')}"
         )
         
-        # Slide 2: Executive Summary
-        slide = prs.slides.add_slide(prs.slide_layouts[1])
-        slide.shapes.title.text = "Executive Summary"
-        findings = data.get("findings", [])
-        slide.placeholders[1].text = f"Total Findings: {len(findings)}"
-        
-        # Slide 3: Recommendations
-        recommendations = data.get("recommendations", [])
-        if recommendations:
-            slide = prs.slides.add_slide(prs.slide_layouts[1])
-            slide.shapes.title.text = "Recommendations"
-            text_box = slide.placeholders[1]
-            text_box.text = ""
-            for rec in recommendations:
-                text_box.text += f"\u2022 {rec}\n"
-        
-        # Slide 4: Chart if available
-        try:
-            from artifact_factory.chart_generator import generate_chart
-            chart_path = generate_chart(data, output_dir)
-            if chart_path and os.path.exists(chart_path):
+        custom_slides = data.get("slides", [])
+        if custom_slides:
+            for s_data in custom_slides:
                 slide = prs.slides.add_slide(prs.slide_layouts[1])
-                slide.shapes.title.text = "Status Chart"
-                slide.shapes.add_picture(chart_path, 1000000, 1000000, width=4000000)
-        except Exception:
-            pass
+                slide.shapes.title.text = s_data.get("title", "Topic")
+                content = s_data.get("content", s_data.get("bullets", []))
+                text_box = slide.placeholders[1]
+                text_box.text = ""
+                if isinstance(content, list):
+                    for pt in content:
+                        text_box.text += f"\u2022 {pt}\n"
+                else:
+                    text_box.text = str(content)
+        else:
+            # Fallback structure
+            findings = data.get("findings", [])
+            if findings:
+                slide = prs.slides.add_slide(prs.slide_layouts[1])
+                slide.shapes.title.text = "Executive Summary"
+                slide.placeholders[1].text = f"Total Items Reviewed: {len(findings)}"
+            
+            recommendations = data.get("action_items_or_recommendations", data.get("recommendations", []))
+            if recommendations:
+                slide = prs.slides.add_slide(prs.slide_layouts[1])
+                slide.shapes.title.text = "Recommendations & Directives"
+                text_box = slide.placeholders[1]
+                text_box.text = ""
+                for rec in recommendations:
+                    text_box.text += f"\u2022 {rec}\n"
         
         from datetime import datetime
-        filename = f"presentation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
+        import re
+        safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', data.get('title', 'presentation')[:30]).strip('_').lower()
+        filename = f"presentation_{safe_title}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pptx"
         path = os.path.join(output_dir, filename)
         prs.save(path)
         

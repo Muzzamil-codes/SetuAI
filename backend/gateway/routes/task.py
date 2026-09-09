@@ -10,6 +10,9 @@ from backend.db import task_store
 router = APIRouter()
 
 
+from typing import Dict
+running_tasks: Dict[str, asyncio.Task] = {}
+
 async def run_orchestrator(task_id: str, task_input_dict: dict):
     """Runs the real orchestrator agent graph, streaming TraceEvents via WebSocket.
     
@@ -52,6 +55,9 @@ async def run_orchestrator(task_id: str, task_input_dict: dict):
                     error=event.payload.get("error", "Unknown error")
                 )
                 
+    except asyncio.CancelledError:
+        # Expected when task is cancelled by user
+        raise
     except ImportError:
         await mock_trace_generator(task_id)
     except Exception as e:
@@ -68,6 +74,10 @@ async def run_orchestrator(task_id: str, task_input_dict: dict):
             summary="",
             error=str(e)
         )
+    finally:
+        # Cleanup
+        if task_id in running_tasks:
+            del running_tasks[task_id]
 
 
 async def mock_trace_generator(task_id: str):
@@ -115,9 +125,46 @@ async def create_task(task_input: TaskInput):
         "model_override": task_input.model_override or "auto"
     }
 
-    asyncio.create_task(run_orchestrator(task_id, task_input_dict))
+    task = asyncio.create_task(run_orchestrator(task_id, task_input_dict))
+    running_tasks[task_id] = task
 
     return {"task_id": task_id}
+
+
+@router.post("/task/{task_id}/cancel")
+async def cancel_task(task_id: str):
+    """Cancels a running task."""
+    if task_id in running_tasks:
+        task = running_tasks[task_id]
+        
+        # 1. Signal the blocking LLM thread to stop streaming
+        try:
+            from orchestrator.agent_graph.nodes.tool_call import request_cancellation
+            request_cancellation(task_id)
+        except Exception as e:
+            print(f"Error signaling cancellation to thread: {e}")
+
+        # 2. Cancel the asyncio Task
+        task.cancel()
+        
+        # Explicitly broadcast cancellation
+        event = TraceEvent(
+            task_id=task_id,
+            step="done",
+            payload={"summary": "Generation stopped by user.", "artifacts": []},
+            timestamp=datetime.now(timezone.utc).isoformat()
+        )
+        await manager.broadcast_event(task_id, event.model_dump_json())
+        
+        task_store.update_task_result(
+            task_id=task_id,
+            status="done",
+            summary="Generation stopped by user.",
+            artifacts=[]
+        )
+        
+        return {"status": "cancelled"}
+    return {"status": "not_found_or_already_finished"}
 
 
 @router.get("/task/{task_id}", response_model=TaskResult)

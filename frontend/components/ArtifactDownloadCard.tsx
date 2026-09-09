@@ -28,7 +28,7 @@ export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCard
     setDownloadingFile(filename);
     try {
       // Direct endpoint with Content-Disposition: attachment header
-      const downloadEndpoint = `${BACKEND_HTTP_URL}/download/${cleanPath}`;
+      const downloadEndpoint = `${BACKEND_HTTP_URL}/download/${filename}`;
       const res = await fetch(downloadEndpoint);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       
@@ -44,7 +44,7 @@ export default function ArtifactDownloadCard({ artifacts }: ArtifactDownloadCard
     } catch (err) {
       console.warn("Blob download fallback triggered:", err);
       // Fallback: direct window location
-      window.open(`${BACKEND_HTTP_URL}/download/${cleanPath}`, "_blank");
+      window.open(`${BACKEND_HTTP_URL}/download/${filename}`, "_blank");
     } finally {
       setTimeout(() => setDownloadingFile(null), 1200);
     }

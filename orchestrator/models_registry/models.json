@@ -5,7 +5,8 @@
     "role": "codegen",
     "quant": "4-bit",
     "vram_mb": 6500,
-    "endpoint": "http://10.124.135.159:11434/v1"
+    "endpoint": "http://localhost:11434/v1",
+    "is_manager": false
   },
   {
     "name": "deepseek-r1:8b",
@@ -13,14 +14,25 @@
     "role": "reasoning",
     "quant": "4-bit",
     "vram_mb": 5800,
-    "endpoint": "http://10.124.135.159:11434/v1"
+    "endpoint": "http://localhost:11434/v1",
+    "is_manager": true
   },
   {
-    "name": "llama3.2-vision",
+    "name": "qwen2.5vl:7b",
     "modality": "vision",
     "role": "extraction",
     "quant": "4-bit",
     "vram_mb": 7200,
-    "endpoint": "http://10.124.135.159:11434/v1"
+    "endpoint": "http://localhost:11434/v1",
+    "is_manager": false
+  },
+  {
+    "name": "qwen3:4b",
+    "modality": "text",
+    "role": "manager",
+    "quant": "4-bit",
+    "vram_mb": 2500,
+    "endpoint": "http://localhost:11434/v1",
+    "is_manager": false
   }
 ]

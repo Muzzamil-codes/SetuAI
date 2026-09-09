@@ -1,8 +1,8 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getModels, saveModels, getKnowledgeFiles, uploadKnowledgeFile, deleteKnowledgeFile, reindexKnowledge, queryKnowledge, getEmbeddingConfig, saveEmbeddingConfig } from "../../lib/api";
-import { Database, Search, Upload, Trash2, RefreshCw, HardDrive } from "lucide-react";
+import { getModels, saveModels, getManagerModel, saveManagerModel, getKnowledgeFiles, uploadKnowledgeFile, deleteKnowledgeFile, reindexKnowledge, queryKnowledge, getEmbeddingConfig, saveEmbeddingConfig } from "../../lib/api";
+import { Database, Search, Upload, Trash2, RefreshCw, HardDrive, Bot } from "lucide-react";
 
 type ModelEntry = {
   name: string;
@@ -16,6 +16,7 @@ type ModelEntry = {
 export default function SettingsPage() {
   const router = useRouter();
   const [models, setModels] = useState<ModelEntry[]>([]);
+  const [managerModel, setManagerModel] = useState<string>("deepseek-r1:8b");
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   
@@ -35,6 +36,12 @@ export default function SettingsPage() {
         setModels(data);
       } catch (err: any) {
         setError(err.message);
+      }
+      try {
+        const mgr = await getManagerModel();
+        if (mgr) setManagerModel(mgr);
+      } catch (err: any) {
+        console.error("Failed to load manager model:", err);
       }
     }
     async function loadKnowledge() {
@@ -56,6 +63,7 @@ export default function SettingsPage() {
     setError("");
     try {
       await saveModels(models);
+      await saveManagerModel(managerModel);
       setStatus("Settings saved successfully!");
     } catch (err: any) {
       setError(err.message);
@@ -184,6 +192,48 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {/* SetuAI Manager Agent Selection Card */}
+      <div className="p-6 bg-[var(--input-bg)] rounded-[20px] border-2 border-purple-200/80 bg-gradient-to-br from-purple-50/40 via-[var(--input-bg)] to-transparent shadow-card space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[var(--border)]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-purple-100 border border-purple-200 flex items-center justify-center text-purple-700">
+              <Bot className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-[15px] font-bold text-[var(--foreground)]">SetuAI Manager Agent</h2>
+              <p className="text-[12px] text-[var(--foreground-muted)]">
+                The primary reasoning persona that converses with users and orchestrates specialist sub-graphs.
+              </p>
+            </div>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-800 border border-purple-200 text-[11px] font-mono font-semibold self-start sm:self-center">
+            Active: {managerModel || "deepseek-r1:8b"}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-center">
+          <div>
+            <label className="block text-[12px] font-medium text-[var(--foreground)] mb-1.5">
+              Select Manager Model
+            </label>
+            <select
+              value={managerModel}
+              onChange={(e) => setManagerModel(e.target.value)}
+              className="w-full p-2.5 text-[13px] font-mono bg-[var(--background)] border border-[var(--border)] rounded-xl text-[var(--foreground)] focus:border-purple-400 focus:ring-2 focus:ring-purple-400/20 focus:outline-none transition-all"
+            >
+              {models.map((m) => (
+                <option key={m.name} value={m.name}>
+                  {m.name} ({m.role || m.modality})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="text-[12px] leading-relaxed text-[var(--foreground-muted)] bg-[var(--background)] p-3 rounded-xl border border-[var(--border)]">
+            💡 When users chat in Mission Control, this model evaluates prompts in a ReAct loop, coordinates <code className="text-[11px] text-purple-700 bg-purple-50 px-1 py-0.5 rounded">codegen_graph</code>, <code className="text-[11px] text-blue-700 bg-blue-50 px-1 py-0.5 rounded">drafting_graph</code>, and <code className="text-[11px] text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded">vision_graph</code>, and delivers final responses.
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-5">
         {models.map((model, idx) => (
           <div key={idx} className="p-6 bg-[var(--input-bg)] rounded-[20px] border border-[var(--border)] space-y-5 relative shadow-card hover:shadow-composer transition-shadow duration-300">
@@ -224,10 +274,17 @@ export default function SettingsPage() {
               <div>
                 <label className="block text-[12px] font-medium text-[var(--foreground-muted)] mb-1.5">Pipeline Role</label>
                 <select
-                  value={model.role}
-                  onChange={(e) => updateModel(idx, "role", e.target.value)}
+                  value={model.name === managerModel ? "manager" : model.role}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    updateModel(idx, "role", val);
+                    if (val === "manager") {
+                      setManagerModel(model.name);
+                    }
+                  }}
                   className="w-full p-2.5 text-[13px] font-mono bg-[var(--background)] border border-[var(--border)] rounded-xl text-[var(--foreground)] focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none transition-all"
                 >
+                  <option value="manager">manager (SetuAI ReAct Orchestrator)</option>
                   <option value="reasoning">reasoning (Deterministic & SymPy)</option>
                   <option value="codegen">codegen (Code Sandbox & Artifacts)</option>
                   <option value="extraction">extraction (Vision / OCR)</option>

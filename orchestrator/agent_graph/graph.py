@@ -162,7 +162,8 @@ def build_graph():
     workflow.add_node("generate", generate_node)
 
     def classify_condition(state: AgentState) -> str:
-        if state.get("task_type") == "conversational":
+        task_type = state.get("task_type")
+        if task_type in ["conversational", "image_analysis"]:
             return "conversational"
         return "complex"
 
@@ -186,9 +187,9 @@ def build_graph():
         if status == "passed":
             return "passed"
         
-        # Do not blindly retry conversational/drafting tasks if the LLM is just down/empty.
+        # Do not blindly retry conversational/drafting/image tasks if the LLM is just down/empty.
         # Retries are meant for things like code execution failing or numeric verification failing.
-        if task_type in ["conversational", "drafting"] and status == "failed":
+        if task_type in ["conversational", "document_generation", "image_analysis"] and status == "failed":
             return "exhausted"
 
         elif status == "failed" and retries < max_retries:
@@ -214,61 +215,16 @@ def build_graph():
 
 
 # ---------------------------------------------------------------------------
-# Public API — the single function the backend imports
+# Public API — SetuAI Manager Agent ReAct Protocol
 # ---------------------------------------------------------------------------
 
 async def run_agent(task_input_dict: dict) -> AsyncGenerator[dict, None]:
-    """Run the full agent pipeline for a task.
+    """Run the SetuAI Manager Agent ReAct pipeline for a task.
 
-    Yields TraceEvent-shaped dicts as the agent progresses through
-    classify → plan → tool_call → verify → generate.
-
-    Args:
-        task_input_dict: A dict matching the TaskInput schema:
-            {task_id, modality, content, context}
-
-    Yields:
-        dict with keys: task_id, step, payload, timestamp
+    Yields TraceEvents as the Manager reasons, orchestrates specialist
+    sub-graphs (codegen, drafting, vision, numeric_verify), and streams
+    the final response to the user.
     """
-    initial_state: AgentState = {
-        "task_id": task_input_dict.get(
-            "task_id",
-            f"task_{int(datetime.now(timezone.utc).timestamp())}"
-        ),
-        "task_input": task_input_dict,
-        "task_type": "",
-        "modality": task_input_dict.get("modality", "text"),
-        "selected_model": {},
-        "messages": task_input_dict.get("context", {}).get("chat_history", []),
-        "plan": "",
-        "tool_calls": [],
-        "tool_results": [],
-        "verification_status": "pending",
-        "retry_count": 0,
-        "max_retries": 2,
-        "artifacts": [],
-        "trace_events": [],
-        "error": None,
-        "final_summary": ""
-    }
-
-    graph = build_graph()
-
-    try:
-        if HAS_LANGGRAPH:
-            async for output in graph.astream(initial_state):
-                for _node_name, state_update in output.items():
-                    events = state_update.get("trace_events", [])
-                    for event in events:
-                        yield event
-        else:
-            async for event in graph.run(initial_state):
-                yield event
-    except Exception as e:
-        yield {
-            "task_id": initial_state["task_id"],
-            "step": "error",
-            "payload": {"error": str(e),
-                        "traceback": traceback.format_exc()},
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+    from orchestrator.agent_graph.manager import run_manager_agent
+    async for event in run_manager_agent(task_input_dict):
+        yield event

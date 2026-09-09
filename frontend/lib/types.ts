@@ -7,6 +7,7 @@ export interface TaskInput {
 }
 
 export type StepType =
+  | "manager"
   | "classify"
   | "plan"
   | "tool_call"

@@ -12,8 +12,31 @@ Routes based on task_type:
 """
 from orchestrator.agent_graph.state import AgentState
 from datetime import datetime, timezone
+from typing import Optional, Dict, Any, List
 import json
 import os
+import threading
+
+# ---------------------------------------------------------------------------
+# Task cancellation registry — allows cancel endpoint to stop blocking threads
+# ---------------------------------------------------------------------------
+_cancel_events: dict[str, threading.Event] = {}
+
+def request_cancellation(task_id: str):
+    """Signal cancellation for a task. Called from the cancel route."""
+    ev = _cancel_events.get(task_id)
+    if ev:
+        ev.set()
+
+def _get_cancel_event(task_id: str) -> threading.Event:
+    """Get or create a cancellation event for a task."""
+    if task_id not in _cancel_events:
+        _cancel_events[task_id] = threading.Event()
+    return _cancel_events[task_id]
+
+def _cleanup_cancel_event(task_id: str):
+    """Remove cancellation event after task completes."""
+    _cancel_events.pop(task_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -43,7 +66,7 @@ def _get_model_config(state: dict) -> dict:
 
 async def _call_llm_async(model_config: dict, system_prompt: str, user_prompt: str,
                           timeout: int = 120, chat_history: list = None,
-                          stream_callback=None) -> str:
+                          stream_callback=None, cancel_event: threading.Event = None) -> str:
     """Call the Ollama-compatible OpenAI API asynchronously, with optional streaming."""
     import re
     import json
@@ -91,6 +114,11 @@ async def _call_llm_async(model_config: dict, system_prompt: str, user_prompt: s
                 if resp.status == 200:
                     if stream_callback:
                         for line in resp:
+                            # Check cancellation flag
+                            if cancel_event and cancel_event.is_set():
+                                print(f"[tool_call] Cancellation detected, stopping LLM stream")
+                                resp.close()
+                                return full_content
                             if line:
                                 decoded = line.decode('utf-8').replace('data: ', '').strip()
                                 if not decoded or decoded == '[DONE]':
@@ -130,7 +158,8 @@ async def _call_llm_async(model_config: dict, system_prompt: str, user_prompt: s
                                     pass
                         # Yield any remaining buffer
                         if buffer and not in_think:
-                            asyncio.run_coroutine_threadsafe(stream_callback(buffer), loop)
+                            if not (cancel_event and cancel_event.is_set()):
+                                asyncio.run_coroutine_threadsafe(stream_callback(buffer), loop)
                     else:
                         data = json.loads(resp.read().decode("utf-8"))
                         msg = data["choices"][0]["message"]
@@ -160,7 +189,7 @@ async def _call_llm_async(model_config: dict, system_prompt: str, user_prompt: s
 
 async def tool_call_node(state: AgentState) -> dict:
     """Execute the appropriate tool based on task type (Async)."""
-    task_type = state.get("task_type", "drafting")
+    task_type = state.get("task_type", "document_generation")
     task_input = state.get("task_input", {})
     task_id = state.get("task_id", "unknown")
     retry_count = state.get("retry_count", 0)
@@ -174,10 +203,13 @@ async def tool_call_node(state: AgentState) -> dict:
     tool_input_data = {}
     result_dict = {"success": False, "data": {}, "error": "No tool executed"}
 
+    # Create cancellation event for this task
+    cancel_event = _get_cancel_event(task_id)
+
     from backend.gateway.websocket_manager import manager
     
     async def stream_callback(chunk: str):
-        if chunk:
+        if chunk and not cancel_event.is_set():
             payload = {
                 "task_id": task_id,
                 "step": "stream_chunk",
@@ -187,19 +219,41 @@ async def tool_call_node(state: AgentState) -> dict:
             await manager.broadcast_event(task_id, json.dumps(payload))
 
     try:
-        if task_type == "extraction":
+        if task_type in ["extraction", "spreadsheet_generation"] and task_input.get("modality", "text") in ["image", "file"]:
             tool_name = "vision"
             image_path = task_input.get("content", "")
-            tool_input_data = {"image_path": image_path, "extract_mode": "both"}
+            user_request = task_input.get("context", {}).get("original_instructions", "")
+            tool_input_data = {"image_path": image_path, "extract_mode": "both", "user_prompt": user_request}
             result_dict = _run_tool(tool_name, tool_input_data)
 
-        elif task_type == "codegen":
+        elif task_type == "image_analysis":
+            tool_name = "vision"
+            image_path = task_input.get("content", "")
+            user_request = task_input.get("context", {}).get("original_instructions", "")
+            chat_history = state.get("messages", [])
+            
+            from orchestrator.classifier.infer import select_model
+            vision_model = select_model("extraction")
+            if not vision_model:
+                vision_model = {"name": "qwen2.5-vl", "endpoint": "http://localhost:11434/v1"}
+            
+            response = await _llm_vision_response(vision_model, user_request, image_path, chat_history, stream_callback, cancel_event)
+
+            result_dict = {
+                "success": bool(response),
+                "data": {
+                    "response": response,
+                    "generated_text": response
+                },
+                "error": None if response else "Vision model failed to generate a response"
+            }
+
+        elif task_type == "code_generation":
             tool_name = "sandbox"
             user_request = task_input.get("content", "")
             chat_history = state.get("messages", [])
 
-            # Actually call the LLM to generate code
-            code = await _llm_generate_code(model_config, user_request, chat_history, stream_callback)
+            code = await _llm_generate_code(model_config, user_request, chat_history, stream_callback, cancel_event)
             test_code = await _llm_generate_tests(model_config, user_request, code)
 
             tool_input_data = {
@@ -210,32 +264,88 @@ async def tool_call_node(state: AgentState) -> dict:
                 "language": "python"
             }
             result_dict = _run_tool(tool_name, tool_input_data)
-            # Attach code to results so generate_node can write it out
-            if result_dict.get("data") is None:
+            if not isinstance(result_dict.get("data"), dict):
                 result_dict["data"] = {}
             result_dict["data"]["generated_code"] = code
             result_dict["data"]["test_code"] = test_code
 
-        elif task_type == "drafting":
-            tool_name = "llm_draft"
+        elif task_type in ["document_generation", "spreadsheet_generation"]:
             user_request = task_input.get("content", "")
+            user_req_lower = user_request.lower()
             chat_history = state.get("messages", [])
 
-            # Try RAG retrieval first
-            rag_context = _try_retrieval(user_request)
+            # 1. Select the appropriate artifact tool
+            if "pptx" in user_req_lower or "presentation" in user_req_lower or "slides" in user_req_lower or "deck" in user_req_lower:
+                tool_name = "pptx"
+            elif "xlsx" in user_req_lower or "spreadsheet" in user_req_lower or "excel" in user_req_lower or task_type == "spreadsheet_generation":
+                tool_name = "xlsx"
+            else:
+                tool_name = "docx"
 
-            # Call LLM to actually draft the response
-            draft = await _llm_draft_response(model_config, user_request, rag_context, chat_history, stream_callback)
+            # 2. Check for relevant SOPs in knowledge base (RAG)
+            raw_sops = _try_retrieval(user_request)
+            sop_chunks = [c for c in raw_sops if c.get("score", 0) >= 0.40]
+            sop_used = len(sop_chunks) > 0
 
-            result_dict = {
-                "success": bool(draft),
-                "data": {
-                    "draft": draft,
-                    "chunks": rag_context if rag_context else [],
-                    "generated_text": draft
-                },
-                "error": None if draft else "LLM failed to generate a draft"
-            }
+            # 3. Check for explicit follow-up artifact export request
+            is_followup_export = ("this" in user_req_lower or "that" in user_req_lower or "previous" in user_req_lower) and \
+                                 ("docx" in user_req_lower or "word" in user_req_lower or "excel" in user_req_lower or "spreadsheet" in user_req_lower or "report" in user_req_lower) and \
+                                 len(user_request.split()) < 25
+
+            tool_input_data = {}
+            if is_followup_export and chat_history:
+                prior_content = ""
+                for msg in reversed(chat_history):
+                    if msg.get("role") == "assistant":
+                        prior_content = msg.get("content", "")
+                        break
+
+                if prior_content:
+                    doc_type = "notice" if "notice" in user_req_lower else "standard"
+                    tool_input_data = {
+                        "doc_type": doc_type,
+                        "title": f"Exported {doc_type.capitalize()}",
+                        "body_content": prior_content
+                    }
+
+            if not tool_input_data:
+                # Call LLM to produce structured arguments matching tool schema
+                tool_input_data = await _llm_generate_tool_args(
+                    model_config=model_config,
+                    user_request=user_request,
+                    tool_name=tool_name,
+                    sop_chunks=sop_chunks,
+                    chat_history=chat_history,
+                    cancel_event=cancel_event
+                )
+
+            # 4. Execute the artifact tool
+            tool_res = _run_tool(tool_name, tool_input_data)
+            if tool_res.get("success"):
+                art = tool_res.get("data", {}).get("artifact")
+                result_dict = {
+                    "success": True,
+                    "data": {
+                        "filename": tool_res.get("data", {}).get("filename"),
+                        "path": tool_res.get("data", {}).get("path"),
+                        "file_path": tool_res.get("data", {}).get("path"),
+                        "artifact": art,
+                        "doc_data": tool_input_data,
+                        "sop_used": sop_used,
+                        "sop_chunks": sop_chunks,
+                        "tool_name": tool_name
+                    },
+                    "error": None
+                }
+            else:
+                result_dict = {
+                    "success": False,
+                    "data": {
+                        "doc_data": tool_input_data,
+                        "tool_name": tool_name
+                    },
+                    "error": tool_res.get("error", f"Tool '{tool_name}' failed to generate file")
+                }
 
         elif task_type == "numeric_verify":
             tool_name = "sandbox"
@@ -255,7 +365,7 @@ async def tool_call_node(state: AgentState) -> dict:
             chat_history = state.get("messages", [])
 
             # Direct LLM response for conversational prompts
-            response = await _llm_chat_response(model_config, user_request, chat_history, stream_callback)
+            response = await _llm_chat_response(model_config, user_request, chat_history, stream_callback, cancel_event)
 
             result_dict = {
                 "success": bool(response),
@@ -294,6 +404,9 @@ async def tool_call_node(state: AgentState) -> dict:
         },
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
+
+    # Cleanup cancellation event
+    _cleanup_cancel_event(task_id)
 
     return {
         "tool_calls": tool_calls,
@@ -342,14 +455,14 @@ def _try_retrieval(query: str) -> list:
 # LLM-powered generation functions
 # ---------------------------------------------------------------------------
 
-async def _llm_generate_code(model_config: dict, user_request: str, chat_history: list = None, stream_callback=None) -> str:
+async def _llm_generate_code(model_config: dict, user_request: str, chat_history: list = None, stream_callback=None, cancel_event: threading.Event = None) -> str:
     """Use the LLM to generate Python code for the user's request."""
     system_prompt = (
         "You are an expert Python programmer. Generate clean, working Python code "
         "for the user's request. Output ONLY the Python code, no explanations, "
         "no markdown fences. The code should be complete and runnable."
     )
-    code = await _call_llm_async(model_config, system_prompt, user_request, timeout=90, chat_history=chat_history, stream_callback=stream_callback)
+    code = await _call_llm_async(model_config, system_prompt, user_request, timeout=90, chat_history=chat_history, stream_callback=stream_callback, cancel_event=cancel_event)
 
     if code:
         code = _strip_markdown_fences(code)
@@ -381,7 +494,8 @@ async def _llm_generate_tests(model_config: dict, user_request: str, generated_c
 
 
 async def _llm_draft_response(model_config: dict, user_request: str,
-                          rag_context: list, chat_history: list = None, stream_callback=None) -> str:
+                          rag_context: list, chat_history: list = None, stream_callback=None,
+                          cancel_event: threading.Event = None) -> str:
     """Use the LLM to draft a text response, optionally using RAG context."""
     context_text = ""
     if rag_context:
@@ -400,21 +514,309 @@ async def _llm_draft_response(model_config: dict, user_request: str,
         user_prompt = f"Context:{context_text}\n\nUser request: {user_request}"
     else:
         system_prompt = (
-            "You are a helpful AI assistant. Provide a clear, well-structured response "
-            "to the user's request. Use markdown formatting where appropriate."
+            "You are a helpful AI assistant that writes professional documents and reports. "
+            "When the user asks you to create a document, report, or file, write the CONTENT "
+            "for that document directly. Do NOT say you cannot create files. Do NOT refuse. "
+            "Just write the actual content as if you were drafting a professional document. "
+            "Use markdown formatting where appropriate."
         )
         user_prompt = user_request
 
-    return await _call_llm_async(model_config, system_prompt, user_prompt, timeout=90, chat_history=chat_history, stream_callback=stream_callback)
+    return await _call_llm_async(model_config, system_prompt, user_prompt, timeout=90, chat_history=chat_history, stream_callback=stream_callback, cancel_event=cancel_event)
 
 
-async def _llm_chat_response(model_config: dict, user_request: str, chat_history: list = None, stream_callback=None) -> str:
+def _extract_json_from_text(text: str) -> Optional[dict]:
+    """Robust JSON extraction from LLM text output."""
+    if not text:
+        return None
+    import re
+    # 1. Try stripping markdown code fences
+    fence_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    if fence_match:
+        content = fence_match.group(1).strip()
+        try:
+            return json.loads(content)
+        except Exception:
+            pass
+
+    # 2. Try parsing full text
+    try:
+        return json.loads(text.strip())
+    except Exception:
+        pass
+
+    # 3. Find outermost { and }
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(text[start:end+1])
+        except Exception:
+            pass
+
+    return None
+
+
+async def _llm_generate_tool_args(
+    model_config: dict,
+    user_request: str,
+    tool_name: str,
+    sop_chunks: list,
+    chat_history: list = None,
+    cancel_event: threading.Event = None
+) -> dict:
+    """Invokes the LLM to generate structured JSON tool arguments for docx, xlsx, or pptx."""
+    sop_context = ""
+    if sop_chunks:
+        sop_snippets = []
+        for i, c in enumerate(sop_chunks[:3], 1):
+            src = c.get("source", f"SOP-{i}")
+            txt = c.get("text", "")[:350]
+            sop_snippets.append(f"[SOP Source: {src}]\n{txt}")
+        sop_context = (
+            "RELEVANT STANDARD OPERATING PROCEDURE (SOP) FOUND IN KNOWLEDGE BASE:\n"
+            + "\n---\n".join(sop_snippets) + "\n\n"
+            "You MUST incorporate the above SOP safety thresholds, specifications, and procedures into the document."
+        )
+    else:
+        sop_context = (
+            "NO SPECIFIC SOP ATTACHED OR FOUND IN THE KNOWLEDGE BASE.\n"
+            "Gracefully skip local SOP references. Draft the document adhering to standard industrial plant engineering best practices, "
+            "OSHA/plant safety protocols, and standard operational documentation standards. Do NOT invent a fake SOP reference number."
+        )
+
+    if tool_name == "docx":
+        system_prompt = f"""You are SetuAI's Expert Industrial Document Preparation Agent.
+Your job is to prepare the exact JSON arguments to invoke the `docx` tool to create the requested document.
+
+{sop_context}
+
+RULES FOR CRAFTING THE DOCUMENT:
+1. Detect the appropriate `doc_type`:
+   - "notice" for plant notices, shutdown announcements, maintenance advisories, safety alerts.
+   - "letter" for formal letters to contractors, management, clients.
+   - "memo" for internal plant memorandums.
+   - "report" for technical inspection or compliance reports.
+2. If `doc_type` is "notice":
+   - Set a clear, official `title` (e.g., "Urgent Notice: Replacement of Rusted Pipelines in Cooling Loop").
+   - Set `recipient_or_target` (e.g., "All Facility Supervisors, Shift Leads, and Maintenance Staff").
+   - Set `company_or_org` (e.g., "Setu Industrial Corporation" or user's company).
+   - Set `department` (e.g., "Plant Maintenance & Reliability Division").
+   - In `body_content`: Write thorough, complete, highly professional Markdown with ## headings covering:
+     ## 1. Scope of Work and Background
+     ## 2. Affected Locations and Piping Segments
+     ## 3. Work Schedule & Utility Outage Window
+     ## 4. Mandatory Safety Protocols & Protective Equipment
+     ## 5. Emergency Contact & Operations Coordination
+   - In `action_items_or_recommendations`: List 3-6 explicit directives/precautions.
+   - Set `signatory`: Title of the authority (e.g. "Chief Operations Engineer").
+3. DO NOT include any conversational commentary or chat preamble (do NOT say 'Here is your notice:', 'Certainly!', etc.).
+4. Return ONLY a single valid JSON object with keys:
+   "doc_type", "title", "company_or_org", "department", "date", "recipient_or_target", "body_content", "action_items_or_recommendations", "signatory".
+"""
+    elif tool_name == "xlsx":
+        system_prompt = f"""You are SetuAI's Expert Spreadsheet Generation Agent.
+Your job is to generate the exact JSON arguments to invoke the `xlsx` tool.
+{sop_context}
+Provide a clear `title` and structured `tables` with `name`, `headers`, and `rows` (arrays of cell values).
+Output ONLY a valid JSON object matching the `xlsx` schema. No chat preamble.
+"""
+    elif tool_name == "pptx":
+        system_prompt = f"""You are SetuAI's Expert Presentation Generation Agent.
+Your job is to generate the exact JSON arguments to invoke the `pptx` tool.
+{sop_context}
+Provide a `title`, `company_or_org`, and `slides` array with `title` and `bullets` for each slide.
+Output ONLY a valid JSON object matching the `pptx` schema. No chat preamble.
+"""
+    else:
+        system_prompt = f"Output a JSON object with arguments for `{tool_name}`."
+
+    user_prompt = f"User Request: {user_request}\n\nGenerate the JSON tool arguments now:"
+
+    raw_response = await _call_llm_async(
+        model_config=model_config,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        timeout=90,
+        chat_history=chat_history,
+        stream_callback=None,
+        cancel_event=cancel_event
+    )
+
+    parsed = _extract_json_from_text(raw_response)
+    if not parsed:
+        doc_type = "notice" if "notice" in user_request.lower() else "standard"
+        parsed = {
+            "title": user_request[:60],
+            "doc_type": doc_type,
+            "body_content": raw_response.strip() or f"Official document regarding {user_request}."
+        }
+    return parsed
+
+
+async def _llm_chat_response(model_config: dict, user_request: str, chat_history: list = None, stream_callback=None, cancel_event: threading.Event = None) -> str:
     """Use the LLM for a simple conversational response."""
     system_prompt = (
         "You are SETU AI, a helpful, friendly AI assistant. "
         "Respond naturally and conversationally. Use markdown formatting when helpful."
     )
-    return await _call_llm_async(model_config, system_prompt, user_request, timeout=60, chat_history=chat_history, stream_callback=stream_callback)
+    return await _call_llm_async(model_config, system_prompt, user_request, timeout=60, chat_history=chat_history, stream_callback=stream_callback, cancel_event=cancel_event)
+
+
+async def _llm_vision_response(model_config: dict, user_request: str, image_path: str, chat_history: list = None, stream_callback=None, cancel_event: threading.Event = None) -> str:
+    """Use the Vision LLM for image analysis and stream the response."""
+    import base64
+    import json
+    import asyncio
+    import urllib.request
+    import re
+    
+    endpoint = model_config.get("endpoint", "http://localhost:11434/v1")
+    model_name = model_config.get("name", "qwen2.5-vl")
+    
+    is_ollama = "11434" in endpoint
+    url = endpoint.replace("/v1", "/api/chat") if is_ollama else f"{endpoint.rstrip('/')}/chat/completions"
+    
+    try:
+        with open(image_path, "rb") as f:
+            raw_b64 = base64.b64encode(f.read()).decode('utf-8')
+    except Exception as e:
+        print(f"[tool_call] Failed to read image for vision response: {e}")
+        return "Error reading image file."
+
+    # Construct messages - keep context minimal for vision to save tokens
+    messages = []
+    if chat_history:
+        # Only keep the last 2 messages to provide recent context without bloating
+        messages.extend(chat_history[-2:])
+        
+    if is_ollama:
+        messages.append({
+            "role": "user",
+            "content": user_request or "Explain this image",
+            "images": [raw_b64]
+        })
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "stream": bool(stream_callback),
+            "options": {
+                "num_ctx": 16384,
+                "num_predict": 4096,
+                "temperature": 0.7
+            }
+        }
+    else:
+        messages.append({
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user_request or "Explain this image"},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{raw_b64}"}}
+            ]
+        })
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 4096,
+            "stream": bool(stream_callback)
+        }
+
+    loop = asyncio.get_running_loop()
+
+    def blocking_fetch():
+        # Log effective request parameters for debugging as requested
+        print(f"[tool_call] Vision LLM Request (Native Ollama: {is_ollama}):")
+        print(f"  - Model: {model_name}")
+        if is_ollama:
+            print(f"  - Context Limit (num_ctx): {payload['options']['num_ctx']}")
+            print(f"  - Gen Limit (num_predict): {payload['options']['num_predict']}")
+        else:
+            print(f"  - Gen Limit (max_tokens): {payload['max_tokens']}")
+        print(f"  - Streaming: {bool(stream_callback)}")
+        
+        full_content = ""
+        in_think = False
+        buffer = ""
+        
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                if resp.status == 200:
+                    if stream_callback:
+                        for line in resp:
+                            if cancel_event and cancel_event.is_set():
+                                print(f"[tool_call] Cancellation detected, stopping Vision LLM stream")
+                                resp.close()
+                                return full_content
+                            if line:
+                                decoded = line.decode('utf-8').replace('data: ', '').strip()
+                                if not decoded or decoded == '[DONE]':
+                                    continue
+                                try:
+                                    data = json.loads(decoded)
+                                    chunk = data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                    if not chunk and "message" in data:
+                                        chunk = data["message"].get("content", "")
+                                    
+                                    full_content += chunk
+                                    
+                                    if not in_think:
+                                        buffer += chunk
+                                        if "<think>" in buffer:
+                                            idx = buffer.find("<think>")
+                                            safe_part = buffer[:idx]
+                                            if safe_part:
+                                                asyncio.run_coroutine_threadsafe(stream_callback(safe_part), loop)
+                                            in_think = True
+                                            buffer = buffer[idx + 7:]
+                                        elif len(buffer) > 7:
+                                            safe_len = len(buffer) - 7
+                                            asyncio.run_coroutine_threadsafe(stream_callback(buffer[:safe_len]), loop)
+                                            buffer = buffer[safe_len:]
+                                    else:
+                                        buffer += chunk
+                                        if "</think>" in buffer:
+                                            idx = buffer.find("</think>")
+                                            in_think = False
+                                            buffer = buffer[idx + 8:]
+                                except Exception:
+                                    pass
+                        if buffer and not in_think:
+                            if not (cancel_event and cancel_event.is_set()):
+                                asyncio.run_coroutine_threadsafe(stream_callback(buffer), loop)
+                    else:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        if "choices" in data:
+                            msg = data["choices"][0]["message"]
+                        elif "message" in data:
+                            msg = data["message"]
+                        else:
+                            msg = {}
+                            
+                        content = msg.get("content", "") or ""
+                        reasoning = msg.get("reasoning", "") or ""
+                        content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+                        if not content and reasoning:
+                            paragraphs = [p.strip() for p in reasoning.strip().split("\n\n") if p.strip()]
+                            if paragraphs:
+                                content = paragraphs[-1]
+                        full_content = content
+                        
+                else:
+                    print(f"[tool_call] Vision LLM HTTP error: {resp.status}")
+        except Exception as e:
+            print(f"[tool_call] Vision LLM request error: {e}")
+            
+        return full_content
+
+    return await asyncio.to_thread(blocking_fetch)
 
 
 # ---------------------------------------------------------------------------

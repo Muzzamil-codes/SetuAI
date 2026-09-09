@@ -64,11 +64,27 @@ def _get_llm_endpoint():
     return None
 
 def classify_task_with_confidence(content: str, modality: str) -> tuple[str, float, str]:
-    if modality in ["image", "file"]:
+    if modality == "image":
+        content_lower = content.strip().lower()
+        if "xlsx" in content_lower or "spreadsheet_generation" in content_lower or "excel" in content_lower:
+            return "spreadsheet_generation", 0.9, "modality_rule"
+        elif "docx" in content_lower or "report" in content_lower or "extract" in content_lower or "note" in content_lower:
+            return "extraction", 0.9, "modality_rule"
+        else:
+            return "image_analysis", 0.9, "modality_rule"
+            
+    if modality == "file":
         return "extraction", 1.0, "modality_rule"
 
+    # Tier 1: Explicit Artifact Requests
+    content_lower = content.strip().lower()
+    if "docx" in content_lower or "word document" in content_lower or "word doc" in content_lower:
+        return "document_generation", 1.0, "artifact_rule"
+    if "xlsx" in content_lower or "excel" in content_lower or "spreadsheet" in content_lower:
+        return "spreadsheet_generation", 1.0, "artifact_rule"
+
     # Pre-check: very short or generic prompts are conversational
-    content_stripped = content.strip().lower()
+    content_stripped = content_lower
     conversational_patterns = [
         "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
         "how are you", "what's up", "who are you", "what can you do",
@@ -78,17 +94,17 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
         if any(content_stripped.startswith(p) or content_stripped == p for p in conversational_patterns):
             return "conversational", 0.95, "conversational_rule"
 
-    # Tier 1: Local LLM structured classification
+    # Tier 2: Local LLM structured classification
     endpoint = _get_llm_endpoint()
     if endpoint:
         url = f"{endpoint}/chat/completions"
         system_prompt = (
-            "Classify the text into one of these 5 categories: codegen, numeric_verify, extraction, drafting, conversational.\n"
+            "Classify the text into one of these 5 categories: code_generation, numeric_verify, extraction, document_generation, conversational.\n"
             "Categories:\n"
-            "- codegen: writing or debugging code, software architecture, programming tasks.\n"
+            "- code_generation: writing or debugging code, software architecture, programming tasks.\n"
             "- numeric_verify: verifying calculations, checking numeric values, tolerances.\n"
             "- extraction: extracting data from tables, documents, or logs.\n"
-            "- drafting: writing reports, emails, summaries, approval notes, non-code documents.\n"
+            "- document_generation: writing reports, emails, summaries, approval notes, non-code documents.\n"
             "- conversational: greetings, general questions, casual chat, help requests, or anything that doesn't fit the above.\n"
             "Return JSON only with keys: 'task_type' (str), 'confidence' (float 0-1), 'reasoning' (str)."
         )
@@ -127,7 +143,7 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
                 if resp.status_code == 200:
                     res = _extract_json(resp.json())
                     task_type = res.get('task_type')
-                    if task_type in ["codegen", "numeric_verify", "extraction", "drafting", "conversational"]:
+                    if task_type in ["code_generation", "numeric_verify", "extraction", "document_generation", "conversational"]:
                         return task_type, float(res.get('confidence', 0.9)), "llm"
             else:
                 req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'),
@@ -138,7 +154,7 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
                         data = json.loads(resp.read().decode('utf-8'))
                         res = _extract_json(data)
                         task_type = res.get('task_type')
-                        if task_type in ["codegen", "numeric_verify", "extraction", "drafting", "conversational"]:
+                        if task_type in ["code_generation", "numeric_verify", "extraction", "document_generation", "conversational"]:
                             return task_type, float(res.get('confidence', 0.9)), "llm"
         except Exception as e:
             print(f"LLM classification failed: {e}")
@@ -146,7 +162,7 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
     # Tier 2: Enhanced keyword heuristics
     content_lower = content.lower()
     categories = {
-        "codegen": {
+        "code_generation": {
             "pos": ["python", "function", "script", "code", "debug", "program", "algorithm", "c++", "java", "implement", "coding", "dynamic programming", "sorting", "recursion", "class", "api", "backend", "frontend"],
             "neg": ["document", "report", "draft", "note", "memo", "approval", "summary"]
         },
@@ -158,7 +174,7 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
             "pos": ["extract", "scan", "ocr", "parse", "invoice", "image", "structured data", "table", "fields"],
             "neg": []
         },
-        "drafting": {
+        "document_generation": {
             "pos": ["draft", "approval", "note", "document", "email", "report", "summarize", "compose", "letter", "memo"],
             "neg": ["python", "function", "algorithm", "debug", "code", "implement"]
         },
@@ -187,13 +203,13 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
         content_emb = get_embedding(content)
         if content_emb is not None:
             bert_categories = {
-                "codegen": "write code program function algorithm implement debug software python java C++ javascript rust dynamic programming sorting",
+                "code_generation": "write code program function algorithm implement debug software python java C++ javascript rust dynamic programming sorting",
                 "numeric_verify": "verify calculate math tolerance pressure number computation check numeric value formula",
                 "extraction": "extract fields from scanned document image OCR structured data table parse invoice",
-                "drafting": "draft approval note write document email report summarize compose letter memo"
+                "document_generation": "draft approval note write document email report summarize compose letter memo"
             }
             
-            best_bert_cat = "drafting"
+            best_bert_cat = "document_generation"
             best_bert_score = -1.0
             
             content_emb = torch.nn.functional.normalize(content_emb, p=2, dim=1)
@@ -212,10 +228,10 @@ def classify_task_with_confidence(content: str, modality: str) -> tuple[str, flo
     except Exception as e:
         print(f"ModernBERT classification failed: {e}")
         
-    return "drafting", 0.1, "fallback"
+    return "document_generation", 0.1, "fallback"
 
 def classify_task(content: str, modality: str) -> str:
-    """Classifies a task into extraction, codegen, drafting, or numeric_verify."""
+    """Classifies a task into extraction, code_generation, document_generation, or numeric_verify."""
     task_type, _, _ = classify_task_with_confidence(content, modality)
     return task_type
 
@@ -231,8 +247,8 @@ def select_model(task_type: str, models_manifest: list = None) -> dict:
             
     role_map = {
         "extraction": "extraction",
-        "codegen": "codegen",
-        "drafting": "reasoning",
+        "code_generation": "code_generation",
+        "document_generation": "reasoning",
         "numeric_verify": "reasoning",
         "conversational": "reasoning"
     }

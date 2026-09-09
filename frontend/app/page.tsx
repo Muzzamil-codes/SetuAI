@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import ChatSidebar from "../components/ChatSidebar";
 import ChatMessage from "../components/ChatMessage";
 import ChatInput from "../components/ChatInput";
-import { uploadFile, submitTask } from "../lib/api";
+import { uploadFile, submitTask, BACKEND_HTTP_URL } from "../lib/api";
 import { connectWebSocket } from "../lib/ws-client";
 import { Conversation, ChatMessage as ChatMessageType, TraceEvent, ArtifactRef } from "../lib/types";
 
@@ -31,7 +31,10 @@ export default function HomePage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [model, setModel] = useState("auto");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
   const wsCleanupRef = useRef<(() => void) | null>(null);
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -78,10 +81,25 @@ export default function HomePage() {
     }
   }, [conversations, isLoaded, activeId]);
 
-  // Auto-scroll to bottom
+  // Smart auto-scroll: only scroll down if user hasn't manually scrolled up
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversations, activeId]);
+    if (!userScrolledUpRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [conversations]);
+
+  // Always scroll to bottom on chat switch
+  useEffect(() => {
+    userScrolledUpRef.current = false;
+    chatEndRef.current?.scrollIntoView({ behavior: "instant" });
+  }, [activeId]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    userScrolledUpRef.current = distFromBottom > 100;
+  }, []);
 
   const activeConversation = conversations.find(c => c.id === activeId) || null;
 
@@ -110,6 +128,15 @@ export default function HomePage() {
     import("../lib/api").then(({ deleteConversationAPI }) => {
       deleteConversationAPI(id).catch(console.error);
     });
+  };
+
+  const handleStop = async () => {
+    if (!currentTaskId) return;
+    try {
+      await fetch(`${BACKEND_HTTP_URL}/task/${currentTaskId}/cancel`, { method: 'POST' });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleSend = async (text: string, file: File | null) => {
@@ -163,6 +190,7 @@ export default function HomePage() {
     }));
 
     setIsProcessing(true);
+    userScrolledUpRef.current = false;
 
     try {
       let modality: "text" | "image" | "file" = "text";
@@ -188,6 +216,8 @@ export default function HomePage() {
         },
         model_override: model,
       });
+
+      setCurrentTaskId(taskId);
 
       // Update AI message with taskId
       updateConversation(convId!, c => ({
@@ -254,6 +284,7 @@ export default function HomePage() {
 
         if (event.step === "done" || event.step === "error") {
           setIsProcessing(false);
+          setCurrentTaskId(null);
         }
       });
     } catch (err: any) {
@@ -266,6 +297,7 @@ export default function HomePage() {
         ),
       }));
       setIsProcessing(false);
+      setCurrentTaskId(null);
     }
   };
 
@@ -281,7 +313,7 @@ export default function HomePage() {
 
       <div className="flex-1 flex flex-col min-w-0">
         {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
           {!activeConversation || activeConversation.messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto px-4 -mt-10 animate-fade-in">
               <div className="text-center flex flex-col items-center mb-10">
@@ -324,6 +356,8 @@ export default function HomePage() {
         <ChatInput
           onSend={handleSend}
           disabled={isProcessing}
+          isGenerating={isProcessing}
+          onStop={handleStop}
           model={model}
           onModelChange={setModel}
           availableModels={availableModels}

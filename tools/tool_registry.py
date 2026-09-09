@@ -36,6 +36,22 @@ def list_tools() -> list[str]:
     """Returns a list of available tool names."""
     return list(TOOL_MAPPINGS.keys())
 
+def get_tool_schema(name: str) -> Optional[dict]:
+    """Returns the JSON schema definition for a tool if defined."""
+    tool = get_tool(name)
+    if hasattr(tool, "SCHEMA"):
+        return tool.SCHEMA
+    return None
+
+def get_all_tool_schemas() -> list[dict]:
+    """Returns all registered tool schemas."""
+    schemas = []
+    for name in list_tools():
+        s = get_tool_schema(name)
+        if s:
+            schemas.append(s)
+    return schemas
+
 def _get_stub_tool(error_message: str):
     """Returns a dummy module that returns a failure ToolResult."""
     class StubTool:

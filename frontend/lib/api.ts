@@ -37,6 +37,22 @@ export async function saveModels(models: any[]): Promise<void> {
   if (!res.ok) throw new Error("Failed to save models");
 }
 
+export async function getManagerModel(): Promise<string> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/settings/manager-model`);
+  if (!res.ok) throw new Error("Failed to fetch manager model");
+  const data = await res.json();
+  return data.manager_model || "deepseek-r1:8b";
+}
+
+export async function saveManagerModel(managerModel: string): Promise<void> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/settings/manager-model`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ manager_model: managerModel }),
+  });
+  if (!res.ok) throw new Error("Failed to save manager model");
+}
+
 // ---- Knowledge Base / RAG APIs ----
 
 export async function getKnowledgeFiles(): Promise<any[]> {

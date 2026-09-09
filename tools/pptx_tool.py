@@ -9,6 +9,38 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from verification.schemas import ToolResult
 
+DESCRIPTION = (
+    "Generates a PowerPoint presentation (.pptx) with formatted title, content slides, and bullet points. "
+    "Use this tool when the user requests presentation slides, pitch decks, or meeting slide briefings."
+)
+
+SCHEMA = {
+    "name": "pptx",
+    "description": DESCRIPTION,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Presentation title"},
+            "company_or_org": {"type": "string", "description": "Company or facility name"},
+            "department": {"type": "string", "description": "Issuing department"},
+            "signatory": {"type": "string", "description": "Presenter name"},
+            "slides": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string", "description": "Slide title"},
+                        "bullets": {"type": "array", "items": {"type": "string"}, "description": "Bullet points for this slide"}
+                    },
+                    "required": ["title", "bullets"]
+                },
+                "description": "List of slide topics and bullet points"
+            }
+        },
+        "required": ["title"]
+    }
+}
+
 
 def run(input: dict) -> ToolResult:
     """Universal tool signature: run(input: dict) -> ToolResult."""
@@ -26,7 +58,12 @@ def run(input: dict) -> ToolResult:
                 data={
                     "filename": result["filename"],
                     "path": result["path"],
-                    "file_path": result["path"]
+                    "file_path": result["path"],
+                    "artifact": {
+                        "type": "pptx",
+                        "filename": result["filename"],
+                        "path": result["path"]
+                    }
                 }
             )
         else:
