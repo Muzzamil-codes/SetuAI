@@ -1,0 +1,31 @@
+STANDARD OPERATING PROCEDURE
+Document ID: SOP-HSE-005
+Revision: 5.2
+Date Effective: 2024-03-01
+Department: Health, Safety & Environment (HSE)
+Title: Lockout / Tagout (LOTO) Procedures for Hazardous Energy Control
+
+1. PURPOSE
+This procedure establishes the minimum requirements for the lockout/tagout of energy-isolating devices to protect employees from hazardous energy during maintenance operations.
+
+2. SCOPE
+Applies to all mechanical, electrical, pneumatic, hydraulic, and chemical energy sources within the refinery premises.
+
+3. DEFINITIONS
+3.1. Authorized Employee: A person who locks out machines to perform maintenance.
+3.2. Affected Employee: An employee whose job requires them to operate a machine on which maintenance is being performed.
+3.3. Positive Isolation: Using a physical barrier, such as a blind flange or slip blind, to completely cut off flow.
+
+4. ENERGY ISOLATION PROCEDURE
+4.1. Preparation: The authorized employee must identify all types and magnitudes of energy associated with the equipment.
+4.2. Shutdown: Turn off the equipment using normal stopping procedures (e.g., stop buttons, toggle switches).
+4.3. Isolation: Physically operate the energy-isolating devices (breakers, valves) so the equipment is completely separated from its energy source.
+4.4. Lockout application: Apply individual locks and danger tags to each isolating device. Every worker involved must place their personal lock.
+4.5. Stored Energy Release: Relieve, disconnect, or restrain any stored energy (e.g., bleeding pressure from lines, discharging capacitors, blocking elevated parts).
+4.6. Verification (Try-Out): Ensure no personnel are exposed, then attempt to start the equipment using the normal operating controls to verify it will not start. Return the controls to "OFF" after verification.
+
+5. REMOVAL OF LOTO
+5.1. Inspect the work area to ensure non-essential items have been removed and machine components are intact.
+5.2. Ensure all employees are safely positioned.
+5.3. Remove lockout devices and tags. Only the employee who applied a lock may remove it.
+5.4. Notify affected employees that maintenance is complete and equipment is ready for use.

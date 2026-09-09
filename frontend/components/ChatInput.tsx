@@ -1,22 +1,21 @@
 "use client";
 import React, { useState, useRef } from "react";
-import { Send, Paperclip, X, ChevronDown } from "lucide-react";
+import { Send, Paperclip, X, ChevronDown, Sparkles } from "lucide-react";
+
+export interface ModelOption {
+  value: string;
+  label: string;
+}
 
 interface ChatInputProps {
   onSend: (message: string, file: File | null) => void;
   disabled?: boolean;
   model: string;
   onModelChange: (model: string) => void;
+  availableModels: ModelOption[];
 }
 
-const MODELS = [
-  { value: "auto", label: "Auto" },
-  { value: "deepseek-r1", label: "DeepSeek-R1" },
-  { value: "qwen2.5-coder", label: "Qwen2.5-Coder" },
-  { value: "llama3.2-vision", label: "LLama3.2-Vision" },
-];
-
-export default function ChatInput({ onSend, disabled, model, onModelChange }: ChatInputProps) {
+export default function ChatInput({ onSend, disabled, model, onModelChange, availableModels = [] }: ChatInputProps) {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [showModelDropdown, setShowModelDropdown] = useState(false);
@@ -47,80 +46,88 @@ export default function ChatInput({ onSend, disabled, model, onModelChange }: Ch
     el.style.height = Math.min(el.scrollHeight, 200) + "px";
   };
 
-  const selectedLabel = MODELS.find(m => m.value === model)?.label || "Auto";
+  const selectedLabel = availableModels.find(m => m.value === model)?.label || "Auto";
 
   return (
-    <div className="border-t border-[#2a2a2a] bg-[#0a0a0a] p-4">
-      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+    <div className="p-4 md:p-6 bg-gradient-to-t from-[var(--background)] via-[var(--background)] to-transparent w-full">
+      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative">
+        
         {/* File preview */}
         {file && (
-          <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-[#2a2a2a] text-xs text-[#aaa] w-fit">
-            <span className="truncate max-w-[200px]">{file.name}</span>
-            <button type="button" onClick={() => setFile(null)} className="text-[#666] hover:text-white">
-              <X className="w-3 h-3" />
+          <div className="absolute bottom-[110%] left-4 flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl bg-[var(--input-bg)] shadow-card border border-[var(--border)] text-[12px] text-[var(--foreground-muted)] w-fit animate-fade-in">
+            <Paperclip className="w-3.5 h-3.5" />
+            <span className="truncate max-w-[200px] font-medium">{file.name}</span>
+            <button type="button" onClick={() => setFile(null)} className="hover:text-[var(--foreground)] p-0.5 rounded-md hover:bg-[var(--accent-light)] transition">
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
 
-        <div className="flex items-end gap-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl px-3 py-2 focus-within:border-[#444]">
-          {/* Model selector */}
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowModelDropdown(!showModelDropdown)}
-              className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs text-[#888] hover:text-white hover:bg-[#2a2a2a] transition"
-            >
-              <span>{selectedLabel}</span>
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {showModelDropdown && (
-              <div className="absolute bottom-full mb-1 left-0 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl py-1 min-w-[160px] z-50">
-                {MODELS.map((m) => (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => { onModelChange(m.value); setShowModelDropdown(false); }}
-                    className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#2a2a2a] transition ${
-                      model === m.value ? "text-white" : "text-[#888]"
-                    }`}
-                  >
-                    {m.label}
-                    {m.value === "auto" && <span className="text-[#555] ml-1">(classifier decides)</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* File attach */}
-          <label className="cursor-pointer p-1.5 rounded-lg text-[#666] hover:text-white hover:bg-[#2a2a2a] transition">
-            <Paperclip className="w-4 h-4" />
-            <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
-          </label>
-
-          {/* Text input */}
+        {/* Floating Command Bar */}
+        <div className="flex flex-col bg-[var(--input-bg)] border border-[var(--border)] rounded-[20px] shadow-composer p-1.5 focus-within:border-[var(--border-hover)] focus-within:shadow-[0_8px_30px_rgba(0,0,0,0.08)] transition-all duration-300">
+          
           <textarea
             ref={textareaRef}
             rows={1}
             value={text}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
-            placeholder="Send a message..."
-            className="flex-1 bg-transparent text-sm text-white placeholder:text-[#555] outline-none resize-none max-h-[200px]"
+            placeholder="Ask SetuAI anything..."
+            className="w-full bg-transparent text-[15px] text-[var(--foreground)] placeholder:text-[#A8A59D] outline-none resize-none max-h-[200px] px-3 pt-3 pb-2 leading-relaxed"
             disabled={disabled}
           />
 
-          {/* Send button */}
-          <button
-            type="submit"
-            disabled={disabled || (!text.trim() && !file)}
-            className="p-2 rounded-lg bg-white text-black hover:bg-[#ddd] disabled:opacity-30 disabled:cursor-not-allowed transition"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+          <div className="flex items-center justify-between px-2 pb-1 pt-2">
+            
+            <div className="flex items-center gap-1">
+              {/* File attach */}
+              <label className="cursor-pointer p-2 rounded-xl text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent-light)]/50 transition">
+                <Paperclip className="w-4 h-4" />
+                <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} className="hidden" />
+              </label>
+
+              {/* Model selector */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowModelDropdown(!showModelDropdown)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-medium text-[var(--foreground-muted)] hover:text-[var(--foreground)] hover:bg-[var(--accent-light)]/50 transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5 opacity-70" />
+                  <span>{selectedLabel}</span>
+                  <ChevronDown className="w-3 h-3 opacity-50" />
+                </button>
+                {showModelDropdown && (
+                  <div className="absolute bottom-full mb-2 left-0 bg-[var(--input-bg)] border border-[var(--border)] rounded-xl shadow-card py-1.5 min-w-[180px] z-50">
+                    {availableModels.map((m) => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        onClick={() => { onModelChange(m.value); setShowModelDropdown(false); }}
+                        className={`w-full flex items-center justify-between px-4 py-2 text-[13px] hover:bg-[var(--accent-light)] transition ${
+                          model === m.value ? "text-[var(--foreground)] font-semibold" : "text-[var(--foreground-muted)]"
+                        }`}
+                      >
+                        {m.label}
+                        {m.value === "auto" && <span className="text-[10px] text-[var(--foreground-muted)] font-mono ml-2 border border-[var(--border)] px-1.5 rounded bg-[var(--background)]">AUTO</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Send button */}
+            <button
+              type="submit"
+              disabled={disabled || (!text.trim() && !file)}
+              className="p-2.5 rounded-xl bg-[var(--accent)] text-white hover:bg-[#1a1a1a] disabled:opacity-30 disabled:hover:bg-[var(--accent)] disabled:cursor-not-allowed transition-all transform active:scale-95 shadow-sm"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        <p className="text-[10px] text-[#444] text-center mt-2">SETU AI — Sovereign AI Workbench</p>
       </form>
     </div>
   );

@@ -1,0 +1,33 @@
+STANDARD OPERATING PROCEDURE
+Document ID: SOP-INST-112
+Revision: 2.0
+Date Effective: 2023-08-22
+Department: Instrumentation & Control
+Title: Calibration of Smart Pressure Transmitters (HART Protocol)
+
+1. PURPOSE
+To standardize the calibration procedure for pressure and differential pressure transmitters to ensure accurate data transmission to the DCS (Distributed Control System).
+
+2. REQUIRED TOOLS
+- Fluke 754 Documenting Process Calibrator (or equivalent)
+- HART Communicator
+- Deadweight tester or precision pressure pump
+- Multimeter
+
+3. CALIBRATION TOLERANCES
+3.1. Standard Process Transmitters: ±0.25% of calibrated span.
+3.2. Custody Transfer Transmitters: ±0.1% of calibrated span.
+3.3. Output signal acceptable range: 4.00 mA to 20.00 mA (±0.02 mA).
+
+4. PROCEDURE
+4.1. Coordinate with the Control Room Operator to put the control loop in MANUAL mode.
+4.2. Isolate the transmitter from the process by closing the block valves on the instrument manifold.
+4.3. Vent the pressure safely using the bleed valves.
+4.4. Connect the HART communicator and record the "As Found" values (Zero and Span).
+4.5. Connect the precision pressure pump and apply 0%, 25%, 50%, 75%, and 100% of the span.
+4.6. Record the mA output at each step.
+4.7. If the deviation at any point exceeds the tolerances defined in Section 3, perform a sensor trim and output trim using the HART communicator.
+4.8. Record the "As Left" values.
+
+5. REPORTING
+All calibration certificates must be uploaded to the Asset Management System. If a transmitter fails calibration and cannot be trimmed, it must be tagged as "Out of Service" and a replacement must be drafted.

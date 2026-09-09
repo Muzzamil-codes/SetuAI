@@ -34,17 +34,49 @@ export default function HomePage() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const wsCleanupRef = useRef<(() => void) | null>(null);
 
-  // Load from localStorage on mount
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [availableModels, setAvailableModels] = useState<{value: string, label: string}[]>([{value: "auto", label: "Auto"}]);
+
+  // Load from API on mount (fallback to localStorage if offline)
   useEffect(() => {
-    const saved = loadConversations();
-    setConversations(saved);
-    if (saved.length > 0) setActiveId(saved[0].id);
+    import("../lib/api").then(({ getConversations, getModels }) => {
+      // 1. Fetch Models
+      getModels().then(data => {
+        const options = [{ value: "auto", label: "Auto" }];
+        data.forEach(m => {
+          options.push({ value: m.name, label: m.name });
+        });
+        setAvailableModels(options);
+      }).catch(err => console.error("Failed to load models", err));
+
+      // 2. Fetch Conversations
+      getConversations().then(data => {
+        setConversations(data);
+        if (data.length > 0) setActiveId(data[0].id);
+        setIsLoaded(true);
+      }).catch(err => {
+        console.warn("Backend unavailable, using local storage", err);
+        const saved = loadConversations();
+        setConversations(saved);
+        if (saved.length > 0) setActiveId(saved[0].id);
+        setIsLoaded(true);
+      });
+    });
   }, []);
 
-  // Save to localStorage whenever conversations change
+  // Save to localStorage whenever conversations change (fast cache)
+  // And sync the active conversation to the backend if it exists
   useEffect(() => {
-    if (conversations.length > 0) saveConversations(conversations);
-  }, [conversations]);
+    if (isLoaded) {
+      saveConversations(conversations);
+      const activeConv = conversations.find(c => c.id === activeId);
+      if (activeConv && activeConv.messages.length > 0) {
+        import("../lib/api").then(({ saveConversationAPI }) => {
+          saveConversationAPI(activeConv).catch(console.error);
+        });
+      }
+    }
+  }, [conversations, isLoaded, activeId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -74,6 +106,10 @@ export default function HomePage() {
     if (activeId === id) {
       setActiveId(conversations.find(c => c.id !== id)?.id || null);
     }
+    // Delete from backend
+    import("../lib/api").then(({ deleteConversationAPI }) => {
+      deleteConversationAPI(id).catch(console.error);
+    });
   };
 
   const handleSend = async (text: string, file: File | null) => {
@@ -170,17 +206,39 @@ export default function HomePage() {
           messages: c.messages.map(m => {
             if (m.id !== aiMsgId) return m;
 
-            const updatedEvents = [...(m.traceEvents || []), event];
+            let updatedEvents = m.traceEvents || [];
             let updatedContent = m.content;
             let updatedArtifacts = m.artifacts || [];
             let stillStreaming = true;
 
+            if (event.step === "stream_chunk") {
+              updatedContent += event.payload?.chunk || "";
+              
+              // Add a trace event for streaming if it doesn't exist
+              const hasStreaming = updatedEvents.some(e => e.step === "streaming");
+              if (!hasStreaming) {
+                updatedEvents = [...updatedEvents, {
+                  task_id: event.task_id,
+                  step: "streaming",
+                  payload: { tool_name: "llm_chat" },
+                  timestamp: new Date().toISOString()
+                }];
+              }
+            } else {
+              updatedEvents = [...updatedEvents, event];
+            }
+
             if (event.step === "done") {
-              updatedContent = event.payload?.summary || "Task completed.";
+              // Only override with summary if we didn't stream any content
+              if (!updatedContent || updatedContent.trim() === "") {
+                updatedContent = event.payload?.summary || "Task completed.";
+              }
               updatedArtifacts = event.payload?.artifacts || [];
               stillStreaming = false;
             } else if (event.step === "error") {
-              updatedContent = `Error: ${event.payload?.error || "Unknown error"}`;
+              if (!updatedContent || updatedContent.trim() === "") {
+                updatedContent = `Error: ${event.payload?.error || "Unknown error"}`;
+              }
               stillStreaming = false;
             }
 
@@ -225,10 +283,31 @@ export default function HomePage() {
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto">
           {!activeConversation || activeConversation.messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <h1 className="text-2xl font-semibold text-white mb-2">SETU AI</h1>
-                <p className="text-sm text-[#666]">Sovereign AI Workbench</p>
+            <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto px-4 -mt-10 animate-fade-in">
+              <div className="text-center flex flex-col items-center mb-10">
+                <div className="w-20 h-20 rounded-[24px] shadow-composer overflow-hidden mb-8 ring-1 ring-[var(--border)] animate-float">
+                  <img src="/logo.jpg" alt="SETU AI" className="w-full h-full object-cover" />
+                </div>
+                <h1 className="text-3xl font-semibold text-[var(--foreground)] tracking-tight mb-3">SetuAI</h1>
+                <p className="text-[15px] text-[var(--foreground-muted)]">Sovereign AI Workbench</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
+                {[
+                  { title: "Analyze a document", desc: "Extract insights from PDFs or SOPs" },
+                  { title: "Generate something", desc: "Draft approval notes or code" },
+                  { title: "Work with my data", desc: "Create dashboards and spreadsheets" },
+                  { title: "Explore an idea", desc: "Brainstorm and research securely" }
+                ].map((card, idx) => (
+                  <button 
+                    key={idx} 
+                    onClick={() => handleSend(card.desc, null)}
+                    className="flex flex-col text-left p-4 rounded-[16px] bg-[var(--input-bg)] border border-[var(--border)] hover:border-[var(--border-hover)] shadow-sm hover:shadow-card transition-all duration-200 group"
+                  >
+                    <span className="text-[13px] font-semibold text-[var(--foreground)] mb-1 group-hover:text-blue-600 transition-colors">{card.title}</span>
+                    <span className="text-[12px] text-[var(--foreground-muted)]">{card.desc}</span>
+                  </button>
+                ))}
               </div>
             </div>
           ) : (
@@ -247,6 +326,7 @@ export default function HomePage() {
           disabled={isProcessing}
           model={model}
           onModelChange={setModel}
+          availableModels={availableModels}
         />
       </div>
     </div>

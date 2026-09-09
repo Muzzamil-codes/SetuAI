@@ -36,3 +36,25 @@ export async function saveModels(models: any[]): Promise<void> {
   });
   if (!res.ok) throw new Error("Failed to save models");
 }
+
+export async function getConversations(): Promise<any[]> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/conversations`);
+  if (!res.ok) throw new Error("Failed to fetch conversations");
+  return res.json();
+}
+
+export async function saveConversationAPI(conv: any): Promise<void> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/conversations/${conv.id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(conv),
+  });
+  if (!res.ok) throw new Error("Failed to save conversation");
+}
+
+export async function deleteConversationAPI(convId: string): Promise<void> {
+  const res = await fetch(`${BACKEND_HTTP_URL}/conversations/${convId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete conversation");
+}
