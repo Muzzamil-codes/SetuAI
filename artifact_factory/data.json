@@ -1,0 +1,36 @@
+{
+    "title": "SETU Approval Note",
+    "company": "SETU",
+    "reviewer": "Parvez Ashraf",
+    "department": "Procurement",
+    "findings": [
+        {
+            "field": "Pump P101",
+            "value": "12kW",
+            "status": "Approved"
+        },
+        {
+            "field": "Sensor S22",
+            "value": "Offline",
+            "status": "Review"
+        },
+        {
+            "field": "Value V10",
+            "value": "Leakage Detected",
+            "status": "Rejected"
+        },
+        {
+            "field": "Motor M7",
+            "value": "Operational",
+            "status": "Approved"
+        },
+        {
+            "field": "Conveyor C3",
+            "value": "Requires Caliberation",
+            "status": "Review"
+        }
+    ],
+    "recommendations": [
+        "Perform quaterly inspection"
+    ]
+}

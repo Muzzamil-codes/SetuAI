@@ -107,7 +107,8 @@ async def create_task(task_input: TaskInput):
         "task_id": task_id,
         "modality": task_input.modality,
         "content": task_input.content,
-        "context": task_input.context
+        "context": task_input.context,
+        "model_override": task_input.model_override or "auto"
     }
 
     asyncio.create_task(run_orchestrator(task_id, task_input_dict))

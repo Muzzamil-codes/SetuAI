@@ -211,3 +211,18 @@ def select_model(task_type: str, models_manifest: list = None) -> dict:
             return model
             
     return {}
+
+def select_model_by_name(model_name: str, models_manifest: list = None) -> dict:
+    """Selects a model from the manifest by its name."""
+    if not models_manifest:
+        models_manifest_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models_registry", "models.json")
+        try:
+            with open(models_manifest_path, "r") as f:
+                models_manifest = json.load(f)
+        except Exception:
+            models_manifest = []
+    
+    for model in models_manifest:
+        if model.get("name") == model_name:
+            return model
+    return {}

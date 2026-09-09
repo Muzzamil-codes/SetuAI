@@ -8,7 +8,7 @@ Exposes `run_agent(task_input_dict) -> AsyncGenerator[dict, None]` for the
 backend to consume. Each yielded dict is a TraceEvent-shaped dict.
 """
 from orchestrator.agent_graph.state import AgentState
-from orchestrator.classifier.infer import classify_task_with_confidence, select_model
+from orchestrator.classifier.infer import classify_task_with_confidence, select_model, select_model_by_name
 from orchestrator.agent_graph.nodes.plan import plan_node
 from orchestrator.agent_graph.nodes.tool_call import tool_call_node
 from orchestrator.agent_graph.nodes.verify import verify_node
@@ -98,7 +98,18 @@ def classify_node(state: AgentState) -> dict:
     modality = task_input.get("modality", "text")
 
     task_type, confidence, method = classify_task_with_confidence(content, modality)
-    model = select_model(task_type)
+    model_override = task_input.get("model_override", "auto")
+
+    if model_override and model_override != "auto":
+        # User explicitly chose a model — skip classifier
+        model = select_model_by_name(model_override)
+        # Still classify to determine task_type for pipeline routing
+        task_type, confidence, method = classify_task_with_confidence(content, modality)
+        method = f"user_override({model_override})"
+        confidence = 1.0
+    else:
+        task_type, confidence, method = classify_task_with_confidence(content, modality)
+        model = select_model(task_type)
 
     trace_events = list(state.get("trace_events", []))
     trace_events.append({

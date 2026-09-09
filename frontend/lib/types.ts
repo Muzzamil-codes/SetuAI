@@ -3,6 +3,7 @@ export interface TaskInput {
   modality: "text" | "image" | "file";
   content: string;
   context: Record<string, unknown>;
+  model_override?: string;
 }
 
 export type StepType =
@@ -27,4 +28,23 @@ export interface TraceEvent {
   step: StepType;
   payload: Record<string, any>;
   timestamp: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  taskId?: string;
+  traceEvents?: TraceEvent[];
+  artifacts?: ArtifactRef[];
+  isStreaming?: boolean;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  messages: ChatMessage[];
+  createdAt: string;
+  model: string;
 }

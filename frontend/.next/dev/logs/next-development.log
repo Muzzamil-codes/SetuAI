@@ -6,3 +6,21 @@
 {"timestamp":"00:00:02.565","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
 {"timestamp":"00:00:11.416","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
 {"timestamp":"00:00:12.109","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"08:22:26.706","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"08:22:28.663","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"08:22:29.195","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}
+{"timestamp":"08:51:58.715","source":"Server","level":"LOG","message":"✓ Compiled in 150ms"}
+{"timestamp":"08:52:13.642","source":"Server","level":"LOG","message":"✓ Compiled in 34ms"}
+{"timestamp":"08:52:23.067","source":"Server","level":"LOG","message":"✓ Compiled in 27ms"}
+{"timestamp":"08:52:23.915","source":"Server","level":"LOG","message":"✓ Compiled in 45ms"}
+{"timestamp":"08:52:43.877","source":"Server","level":"LOG","message":"✓ Compiled in 83ms"}
+{"timestamp":"08:52:45.384","source":"Server","level":"LOG","message":"✓ Compiled in 167ms"}
+{"timestamp":"09:01:45.871","source":"Server","level":"ERROR","message":"⨯ ./app/trace/[taskId]/page.tsx\nError: Module not found: Can't resolve './page.tsx'\n\n\nhttps://nextjs.org/docs/messages/module-not-found\n\n"}
+{"timestamp":"09:01:45.871","source":"Server","level":"ERROR","message":"⨯ ./app/trace/[taskId]/page.tsx\nError: Module not found: Can't resolve './page.tsx'\n\n\nhttps://nextjs.org/docs/messages/module-not-found\n\n"}
+{"timestamp":"09:04:55.801","source":"Browser","level":"ERROR","message":"./app/trace/[taskId]/page.tsx\nError: Module not found: Can't resolve './page.tsx'\n\nhttps://nextjs.org/docs/messages/module-not-found "}
+{"timestamp":"09:04:55.801","source":"Server","level":"ERROR","message":"[browser] \"./app/trace/[taskId]/page.tsx\\nError: Module not found: Can't resolve './page.tsx'\\n\\nhttps://nextjs.org/docs/messages/module-not-found\" \"\""}
+{"timestamp":"09:04:55.834","source":"Browser","level":"ERROR","message":"./app/trace/[taskId]/page.tsx\nError: Module not found: Can't resolve './page.tsx'\n\nhttps://nextjs.org/docs/messages/module-not-found "}
+{"timestamp":"09:04:55.834","source":"Server","level":"ERROR","message":"[browser] \"./app/trace/[taskId]/page.tsx\\nError: Module not found: Can't resolve './page.tsx'\\n\\nhttps://nextjs.org/docs/messages/module-not-found\" \"\""}
+{"timestamp":"09:04:57.424","source":"Browser","level":"ERROR","message":"./app/trace/[taskId]/page.tsx\nError: Module not found: Can't resolve './page.tsx'\n\nhttps://nextjs.org/docs/messages/module-not-found "}
+{"timestamp":"09:04:57.425","source":"Server","level":"ERROR","message":"[browser] \"./app/trace/[taskId]/page.tsx\\nError: Module not found: Can't resolve './page.tsx'\\n\\nhttps://nextjs.org/docs/messages/module-not-found\" \"\""}
+{"timestamp":"09:04:57.558","source":"Browser","level":"INFO","message":"Download the React DevTools for a better development experience: https://react.dev/link/react-devtools"}

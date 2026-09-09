@@ -8,6 +8,7 @@ class TaskInput(BaseModel):
     modality: Literal["text", "image", "file"]
     content: str  # Raw text or data/-relative file path
     context: Dict[str, Any] = {}  # Optional metadata, e.g. {"unit": "Unit-2"}
+    model_override: Optional[str] = "auto"  # "auto" or a model name like "deepseek-r1"
 
 
 class TraceEvent(BaseModel):

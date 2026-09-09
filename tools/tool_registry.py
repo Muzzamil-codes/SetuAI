@@ -14,7 +14,8 @@ TOOL_MAPPINGS = {
     "verify": "tools.sandbox_tool",
     "docx": "tools.docx_tool",
     "xlsx": "tools.xlsx_tool",
-    "vision": "tools.vision_tool"
+    "vision": "tools.vision_tool",
+    "pptx": "tools.pptx_tool"
 }
 
 def get_tool(name: str) -> Any:

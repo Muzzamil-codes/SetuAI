@@ -34,9 +34,18 @@ def _should_produce_artifact(task_input: dict, task_type: str) -> bool:
         "generate report", "draft note", "approval note", "create document",
         "write report", "produce file", "export", "download",
         "save as", ".docx", ".xlsx", ".pdf", "spreadsheet",
-        "draft approval", "draft document"
+        "draft approval", "draft document",
+        "slides", "presentation", ".pptx", "powerpoint", "deck"
     ]
     return any(kw in combined for kw in artifact_keywords)
+
+
+def _wants_slides(task_input: dict) -> bool:
+    content = task_input.get("content", "").lower()
+    context = task_input.get("context", {})
+    original = str(context.get("original_instructions", "")).lower()
+    combined = content + " " + original
+    return any(kw in combined for kw in ["slides", "presentation", ".pptx", "powerpoint", "deck", "ppt"])
 
 
 def generate_node(state: AgentState) -> dict:
@@ -66,7 +75,10 @@ def generate_node(state: AgentState) -> dict:
         os.makedirs(outputs_dir, exist_ok=True)
 
         try:
-            if task_type in ["extraction", "drafting"]:
+            if _wants_slides(task_input):
+                artifact = _build_pptx(task_id, task_type, content,
+                                       latest_data, needs_review, outputs_dir)
+            elif task_type in ["extraction", "drafting"]:
                 artifact = _build_docx(task_id, task_type, content,
                                        latest_data, needs_review, outputs_dir)
             elif task_type == "numeric_verify":
@@ -291,3 +303,54 @@ def _build_text(task_id, content, outputs_dir):
     with open(path, "w") as f:
         f.write(f"Setu AI Output | Task: {task_id}\n\n{content}\n")
     return {"type": "txt", "filename": filename, "path": f"outputs/{filename}"}
+
+
+def _build_pptx(task_id, task_type, content, data, needs_review, outputs_dir):
+    """Try the pptx tool; fall back to plain text."""
+    findings = []
+    if task_type == "extraction":
+        fields = data.get("fields", data.get("extracted_fields", {}))
+        if isinstance(fields, dict):
+            for field_name, value in fields.items():
+                findings.append({
+                    "field": field_name.replace("_", " ").title(),
+                    "value": str(value),
+                    "status": "Normal"
+                })
+    elif task_type == "drafting":
+        for i, chunk in enumerate(data.get("chunks", [])[:5]):
+            text = chunk.get("text", str(chunk)) if isinstance(chunk, dict) else str(chunk)
+            findings.append({
+                "field": f"Reference {i + 1}",
+                "value": text[:200],
+                "status": "Normal"
+            })
+    
+    review_tag = " [NEEDS HUMAN REVIEW]" if needs_review else ""
+    pptx_input = {
+        "data": {
+            "title": f"Presentation — {content[:80]}",
+            "company": "SETU",
+            "reviewer": "AI Generated",
+            "department": "Engineering",
+            "findings": findings,
+            "recommendations": [f"AI-generated summary for: {content[:200]}{review_tag}"]
+        }
+    }
+    
+    try:
+        from tools.tool_registry import get_tool
+        tool = get_tool("pptx")
+        result = tool.run(pptx_input)
+        if result.success:
+            file_path = result.data.get("file_path") or result.data.get("path", "")
+            filename = result.data.get("filename") or os.path.basename(file_path)
+            return {"type": "pptx", "filename": filename, "path": file_path}
+    except Exception:
+        pass
+    
+    filename = f"{task_id}_presentation.txt"
+    path = os.path.join(outputs_dir, filename)
+    with open(path, "w") as f:
+        f.write(f"Presentation: {content[:200]}\n")
+    return {"type": "pptx", "filename": filename, "path": f"outputs/{filename}"}
