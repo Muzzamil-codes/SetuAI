@@ -14,6 +14,7 @@ export type StepType =
   | "verify_pass"
   | "verify_fail"
   | "retry"
+  | "self_heal"
   | "generate"
   | "done"
   | "error";

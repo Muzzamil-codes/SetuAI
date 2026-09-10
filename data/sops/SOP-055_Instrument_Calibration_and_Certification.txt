@@ -1,0 +1,58 @@
+BHARAT REFINERIES LIMITED (BRL) — INSTRUMENTATION & CALIBRATION LAB
+STANDARD OPERATING PROCEDURE
+
+SOP Number: SOP-055
+Title: Instrument Calibration, Certification and Stamp Validity
+Revision: 07
+Effective Date: 01-Apr-2025
+Prepared By: P. Ramesh, Calibration Lab In-Charge
+Approved By: S. Deshmukh, Head of Process Safety
+Review Cycle: 12 months
+
+1. PURPOSE
+To define the calibration frequency, certification stamping procedure, and validity
+period for field pressure gauges, thermocouples, and flow meters used in Unit-1 and
+Unit-2, and to define how calibration validity is checked during inspection rounds.
+
+2. SCOPE
+Applies to all portable and fixed field instruments requiring periodic calibration
+under the BRL Instrumentation Register.
+
+3. CALIBRATION FREQUENCY AND STAMPING
+3.1 All pressure gauges used for valve tolerance checks under SOP-114 must be
+    calibrated at intervals not exceeding 6 months.
+3.2 On successful calibration, the Calibration Lab applies a physical stamp to the
+    instrument body and to the associated inspection card, showing the calibration
+    date and the lab technician's registration code. The stamp remains valid for
+    exactly 6 months from the date shown, after which the instrument must be
+    withdrawn from service until recalibrated.
+3.3 The calibration date stamp format is DD-MM-YY, applied using the standard BRL
+    embossing stamp. Where a stamp is applied to a physical inspection card rather
+    than the instrument itself, care must be taken during field use to avoid smudging,
+    since a smudged or partially legible date cannot be used to confirm calibration
+    validity.
+
+4. HANDLING UNREADABLE OR DISPUTED STAMPS
+4.1 If a calibration stamp on an inspection card is smudged, partially obscured, or
+    otherwise not confidently legible, the instrument's calibration status must be
+    treated as UNKNOWN, not assumed valid and not assumed expired.
+4.2 An UNKNOWN calibration status must be resolved by cross-checking the Calibration
+    Lab's digital register (which records every calibration event independently of the
+    physical stamp) before any reading taken with that instrument is used in a
+    Deviation Flag determination or an Approval Note.
+4.3 Under no circumstances should a technician, engineer, or automated system estimate
+    or infer a calibration date from context (e.g. "likely calibrated during the last
+    turnaround") in place of a confirmed stamp or register entry. Any finding relying
+    on an instrument with UNKNOWN calibration status must be explicitly marked as such
+    in the inspection record and in any resulting Approval Note per SOP-301.
+
+5. REFERENCE STANDARDS
+5.1 Internal: SOP-114 (Valve Pressure Tolerance), SOP-089 (Inspection & Findings
+    Reporting), SOP-301 (Approval Note Drafting & Sign-off)
+
+6. REVISION HISTORY
+Rev 05 (2023): Reduced calibration interval from 12 months to 6 months for pressure
+    gauges following a drift-related incident.
+Rev 06 (2024): Introduced parallel digital register requirement.
+Rev 07 (2025): Added Section 4 (unreadable stamp handling) after a near-miss where a
+    smudged calibration date was misread as valid during a manual review.

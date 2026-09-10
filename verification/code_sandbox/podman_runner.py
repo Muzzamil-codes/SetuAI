@@ -4,13 +4,14 @@ Executes AI-generated code and tests inside an isolated container with zero netw
 Follows API_CONTRACTS.md Section 3.3.
 """
 import os
+import sys
 import shutil
 import tempfile
 import subprocess
 from typing import Dict, Any, Optional
 from verification.schemas import ToolResult
 from verification.code_sandbox.test_harness.harness import generate_test_harness
-from verification.code_sandbox.self_heal import format_self_heal_context
+from verification.code_sandbox.self_heal import format_self_heal_context, parse_verification_error
 
 DEFAULT_IMAGE = os.environ.get("SETU_SANDBOX_IMAGE", "python:3.11-slim")
 DEFAULT_TIMEOUT = int(os.environ.get("SETU_SANDBOX_TIMEOUT", "15"))
@@ -144,7 +145,7 @@ exec(compile(code_to_exec, "{test_path}", "exec"), {{'__name__': '__main__'}})
 """
                 try:
                     proc = subprocess.run(
-                        ["python3", "-c", guarded_runner],
+                        [sys.executable, "-c", guarded_runner],
                         cwd=tmpdir,
                         capture_output=True,
                         text=True,
@@ -163,7 +164,13 @@ exec(compile(code_to_exec, "{test_path}", "exec"), {{'__name__': '__main__'}})
                             "passed": False,
                             "stdout": "",
                             "stderr": f"Execution timed out after {timeout_secs} seconds.",
-                            "exit_code": -1
+                            "exit_code": -1,
+                            "parsed_error": {
+                                "exc_type": "TimeoutError",
+                                "exc_msg": f"Timed out after {timeout_secs}s",
+                                "location": "sandbox",
+                                "concise_summary": f"TimeoutError: Timed out after {timeout_secs}s"
+                            }
                         },
                         error=None
                     )
@@ -185,6 +192,7 @@ exec(compile(code_to_exec, "{test_path}", "exec"), {{'__name__': '__main__'}})
             if not passed:
                 heal_info = format_self_heal_context(stdout, stderr, exit_code)
                 result_data["self_heal_prompt"] = heal_info["prompt_instruction"]
+                result_data["parsed_error"] = parse_verification_error(stderr, stdout)
 
             return ToolResult(
                 success=True,

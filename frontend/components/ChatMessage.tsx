@@ -19,6 +19,7 @@ function StepBadge({ step }: { step: string }) {
     verify_pass: "bg-emerald-50 text-emerald-700 border border-emerald-200",
     verify_fail: "bg-rose-50 text-rose-700 border border-rose-200",
     retry: "bg-amber-50 text-amber-700 border border-amber-200",
+    self_heal: "bg-amber-50 text-amber-700 border border-amber-200",
     generate: "bg-[#E5E3DD] text-[#6F6D68] border border-[#DDDAD3]",
     streaming: "bg-blue-50 text-blue-700 border border-blue-200",
     done: "bg-emerald-50 text-emerald-700 border border-emerald-200",
@@ -135,7 +136,10 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                 {traceEvents.filter(e => e.step !== "done").map((event, i) => (
                   <div key={i} className="flex items-start gap-2 text-[11px] font-mono text-[var(--foreground-muted)]">
                     <StepBadge step={event.step} />
-                    <span className="truncate mt-0.5">
+                    <span 
+                      className="mt-0.5 break-words max-w-full"
+                      title={event.payload?.detail || event.payload?.error || ""}
+                    >
                       {event.step === "manager" && `→ SetuAI Manager (${event.payload?.selected_model?.name || 'deepseek-r1:8b'})`}
                       {event.step === "classify" && `→ ${event.payload?.task_type} (Model: ${event.payload?.selected_model?.name || 'auto'})`}
                       {event.step === "plan" && `→ ${(event.payload?.plan || "").slice(0, 80)}...`}
@@ -143,6 +147,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                       {event.step === "verify_pass" && `→ ${event.payload?.detail}`}
                       {event.step === "verify_fail" && `→ ${event.payload?.detail}`}
                       {event.step === "retry" && `→ Attempt ${event.payload?.attempt}`}
+                      {event.step === "self_heal" && `→ ${event.payload?.detail || `Self-heal attempt ${event.payload?.attempt || 1}`}`}
                       {event.step === "streaming" && `→ Streaming from ${event.payload?.tool_name}...`}
                       {event.step === "generate" && `→ ${event.payload?.artifact_type || "generating"}`}
                       {event.step === "error" && `→ ${event.payload?.error}`}

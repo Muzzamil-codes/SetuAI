@@ -74,9 +74,9 @@ export default function TraceStream({ events }: TraceStreamProps) {
         borderGlow: "border-rose-800/50 bg-rose-950/10",
       };
     }
-    if (s === "retry") {
+    if (s === "retry" || s === "self_heal") {
       return {
-        label: "SELF-HEAL RETRY",
+        label: s === "self_heal" ? "SELF-HEAL REPAIR" : "SELF-HEAL RETRY",
         icon: <RefreshCw className="w-4 h-4 text-yellow-400 animate-spin" />,
         badgeColor: "bg-yellow-950/80 text-yellow-300 border-yellow-700/60",
         borderGlow: "border-yellow-800/50",
@@ -213,16 +213,21 @@ export default function TraceStream({ events }: TraceStreamProps) {
       );
     }
 
-    if (s === "retry") {
+    if (s === "retry" || s === "self_heal") {
       return (
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs font-mono text-yellow-300">
             <RefreshCw className="w-3.5 h-3.5 animate-spin text-yellow-400" />
-            <span>Autonomous Self-Heal Loop (Attempt {p.attempt || 1}/{p.max_retries || 3})</span>
+            <span>
+              {s === "self_heal" 
+                ? `Autonomous Self-Heal Repair (Attempt ${p.attempt || 1}/${p.max_attempts || 2})`
+                : `Autonomous Self-Heal Loop (Attempt ${p.attempt || 1}/${p.max_retries || 3})`
+              }
+            </span>
           </div>
-          {p.reason && (
+          {(p.detail || p.reason) && (
             <p className="text-xs text-slate-300 font-mono bg-yellow-950/30 p-2 rounded border border-yellow-900/40">
-              Reason: {p.reason}
+              {p.detail || p.reason}
             </p>
           )}
         </div>

@@ -17,14 +17,33 @@ from orchestrator.agent_graph.nodes.tool_call import (
 
 
 def _get_manager_model() -> dict:
-    """Finds deepseek-r1 or falls back to first available model."""
+    """Finds configured manager model from settings.json, models.json, or fallback."""
     try:
-        models_path = os.path.join(
+        reg_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "models_registry", "models.json"
+            "models_registry"
         )
-        with open(models_path, "r") as f:
-            manifest = json.load(f)
+        settings_path = os.path.join(reg_dir, "settings.json")
+        models_path = os.path.join(reg_dir, "models.json")
+
+        manifest = []
+        if os.path.exists(models_path):
+            with open(models_path, "r") as f:
+                manifest = json.load(f)
+
+        if os.path.exists(settings_path):
+            with open(settings_path, "r") as f:
+                s_data = json.load(f)
+                conf = s_data.get("manager_model", "")
+                if conf:
+                    for m in manifest:
+                        if m.get("name") == conf:
+                            return m
+                    return {"name": conf, "endpoint": "http://localhost:11434/v1"}
+
+        for m in manifest:
+            if m.get("role") == "manager" or m.get("is_manager"):
+                return m
         for m in manifest:
             if "deepseek" in m.get("name", "") or "reasoning" in m.get("role", ""):
                 return m
@@ -38,7 +57,8 @@ def _get_manager_model() -> dict:
 async def run_drafting_graph(
     task_id: str,
     graph_input: dict,
-    cancel_event: threading.Event = None
+    cancel_event: threading.Event = None,
+    manager_model: dict = None
 ) -> Tuple[Dict[str, Any], list]:
     """
     Executes the drafting graph:
@@ -66,10 +86,12 @@ async def run_drafting_graph(
     else:
         tool_name = "docx"
 
-    model_config = _get_manager_model()
+    model_config = manager_model or _get_manager_model()
 
     # 2. Plan event
-    plan_text = f"Check SOPs in knowledge base → synthesize parameters for {tool_name} → verify file integrity"
+    lower_inst = instruction.lower()
+    needs_sop = any(k in lower_inst for k in ["sop", "sops", "procedure", "standard operating", "knowledge base"])
+    plan_text = f"Check SOPs in knowledge base → synthesize parameters for {tool_name} → verify file integrity" if needs_sop else f"Synthesize parameters for {tool_name} from source input → verify file integrity"
     trace_events.append({
         "task_id": task_id,
         "step": "plan",
@@ -81,9 +103,11 @@ async def run_drafting_graph(
         "timestamp": datetime.now(timezone.utc).isoformat()
     })
 
-    # 3. Check SOPs
-    raw_sops = _try_retrieval(instruction)
-    sop_chunks = [c for c in raw_sops if c.get("score", 0) >= 0.40]
+    # 3. Check SOPs only if explicitly requested
+    sop_chunks = []
+    if needs_sop:
+        raw_sops = _try_retrieval(instruction)
+        sop_chunks = [c for c in raw_sops if c.get("score", 0) >= 0.40]
     sop_used = len(sop_chunks) > 0
 
     # Combine instruction with attached data (e.g. verified python code)
@@ -156,7 +180,8 @@ async def run_drafting_graph(
             "step": "generate",
             "payload": {
                 "artifact_type": tool_name,
-                "filename": filename
+                "filename": filename,
+                "artifact": artifact
             },
             "timestamp": datetime.now(timezone.utc).isoformat()
         })

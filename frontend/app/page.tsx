@@ -259,9 +259,9 @@ export default function HomePage() {
             }
 
             if (event.step === "done") {
-              // Only override with summary if we didn't stream any content
-              if (!updatedContent || updatedContent.trim() === "") {
-                updatedContent = event.payload?.summary || "Task completed.";
+              // Use the finalized, cleaned summary from the done event if present
+              if (event.payload?.summary && event.payload.summary.trim() !== "") {
+                updatedContent = event.payload.summary;
               }
               updatedArtifacts = event.payload?.artifacts || [];
               stillStreaming = false;

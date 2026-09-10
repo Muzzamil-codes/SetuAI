@@ -1,0 +1,67 @@
+BHARAT REFINERIES LIMITED (BRL) — UNIT-2 OPERATIONS DIVISION
+STANDARD OPERATING PROCEDURE
+
+SOP Number: SOP-089
+Title: Periodic Inspection Rounds and Findings Reporting
+Revision: 06
+Effective Date: 20-Jul-2025
+Prepared By: T. Bhatt, Shift Operations Lead
+Approved By: S. Deshmukh, Head of Process Safety
+Review Cycle: 12 months
+
+1. PURPOSE
+To standardize how field technicians record inspection findings during routine and
+turnaround inspections, and how those findings are escalated into a formal Approval
+Note (NFA) when corrective action or management sign-off is required.
+
+2. SCOPE
+Applies to all shift-based and turnaround inspection rounds in Unit-2, covering
+pressure vessels, valves, piping, and rotating equipment.
+
+3. PROCEDURE
+3.1 Inspection Sheet Format. Every inspection round is recorded on the standard BRL
+    inspection card, either in physical carbon-copy form or via the digital tablet
+    application. Each entry must capture: equipment tag, reading/observation, date,
+    inspector initials, and a supervisor stamp for any reading outside normal range.
+3.2 Handwritten Entries. Where physical inspection cards are used, handwriting must be
+    in block capitals for equipment tags and numeric readings to reduce transcription
+    error during digitization. Supervisor approval stamps are applied directly on the
+    card next to the flagged reading.
+3.3 Findings Classification. Each finding is classified as:
+        NORMAL — reading within tolerance, no action required.
+        DEVIATION — reading outside tolerance per the relevant equipment SOP (e.g.
+            SOP-114 for valve pressure), requiring supervisor review within one shift.
+        CRITICAL — reading indicating an immediate safety risk, requiring immediate
+            isolation and escalation to the Head of Process Safety.
+3.4 Escalation to Approval Note. Any DEVIATION or CRITICAL finding that results in a
+    corrective action, a component replacement, or a change to operating parameters
+    must be drafted into a formal Approval Note (NFA) per SOP-301 within 48 hours of
+    the finding being logged. The Approval Note must reference the original inspection
+    card (including a legible image or scan of the card) and must not paraphrase the
+    original reading without preserving traceability back to the source entry.
+3.5 Illegible or Ambiguous Entries. If a reading, date, or stamp on a physical
+    inspection card cannot be confidently read during digitization (e.g. due to
+    smudging, water damage, or unclear handwriting), it must be marked "UNVERIFIED —
+    CONFIRM WITH ORIGINATING SHIFT" rather than estimated or guessed, and the
+    originating shift supervisor must be contacted before the finding is finalized in
+    any Approval Note.
+
+4. RESPONSIBILITIES
+4.1 Field Technician — records readings accurately, flags anything outside normal
+    range immediately rather than at end of shift.
+4.2 Shift Supervisor — reviews all DEVIATION and CRITICAL findings within the
+    timeframes in Section 3.3, applies approval stamp.
+4.3 Documentation Officer — digitizes physical inspection cards within 24 hours,
+    maintains the digital archive, and is responsible for applying the
+    "UNVERIFIED" marking described in Section 3.5 where applicable.
+
+5. REFERENCE STANDARDS
+5.1 Internal: SOP-114 (Valve Pressure Tolerance), SOP-301 (Approval Note Drafting &
+    Sign-off), SOP-055 (Instrument Calibration & Certification)
+
+6. REVISION HISTORY
+Rev 04 (2022): Introduced digital tablet application as alternative to carbon-copy
+    cards.
+Rev 05 (2024): Added CRITICAL classification tier following an incident review.
+Rev 06 (2025): Added Section 3.5 (illegible entry handling) after a near-miss caused
+    by a mis-transcribed calibration date on a smudged inspection card.

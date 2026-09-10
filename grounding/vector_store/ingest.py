@@ -2,7 +2,7 @@ import os
 import glob
 from grounding.vector_store.chroma_client import get_chroma_collection
 
-def chunk_text(text: str, chunk_size: int = 250) -> list[str]:
+def chunk_text(text: str, chunk_size: int = 1000) -> list[str]:
     """Splits SOP text into manageable chunks for vector search."""
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     chunks = []

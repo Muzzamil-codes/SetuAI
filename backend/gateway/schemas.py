@@ -17,7 +17,7 @@ class TraceEvent(BaseModel):
     step: Literal[
         "manager", "classify", "plan", "tool_call", "verify_pass",
         "verify_fail", "retry", "generate", "done", "error",
-        "stream_chunk"
+        "stream_chunk", "self_heal"
     ]
     payload: Dict[str, Any]
     timestamp: str  # ISO 8601 string format

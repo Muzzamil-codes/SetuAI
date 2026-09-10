@@ -15,7 +15,7 @@
     "quant": "4-bit",
     "vram_mb": 5800,
     "endpoint": "http://localhost:11434/v1",
-    "is_manager": true
+    "is_manager": false
   },
   {
     "name": "qwen2.5vl:7b",
@@ -33,6 +33,15 @@
     "quant": "4-bit",
     "vram_mb": 2500,
     "endpoint": "http://localhost:11434/v1",
-    "is_manager": false
+    "is_manager": true
+  },
+  {
+    "name": "qwen3:4b-instruct-2507-q4_K_M",
+    "modality": "text",
+    "role": "manager",
+    "quant": "4-bit",
+    "vram_mb": 2500,
+    "endpoint": "http://localhost:11434/v1",
+    "is_manager": true
   }
 ]

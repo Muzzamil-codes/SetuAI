@@ -1,0 +1,63 @@
+BHARAT REFINERIES LIMITED (BRL) — UNIT-2 PROCESS SAFETY DIVISION
+STANDARD OPERATING PROCEDURE
+
+SOP Number: SOP-114
+Title: Valve Pressure Tolerance, Testing and Acceptance Criteria
+Revision: 04
+Effective Date: 12-Jan-2025
+Prepared By: R. Iyer, Sr. Process Engineer
+Approved By: S. Deshmukh, Head of Process Safety
+Review Cycle: 24 months
+
+1. PURPOSE
+This procedure defines the acceptable pressure tolerance band for control and isolation
+valves in hydrocarbon service across Unit-1 and Unit-2, and the testing method used to
+confirm a valve is fit for continued service during scheduled and unscheduled inspections.
+
+2. SCOPE
+Applies to all gate, globe, and control valves rated Class 300 and above installed in
+Unit-2 process piping, including but not limited to Valve V-201 through V-220.
+
+3. DEFINITIONS
+3.1 Rated Tolerance — the maximum permissible deviation between the observed field
+    reading and the valve's design set-point, expressed in bar.
+3.2 Deviation Flag — a recorded finding where the observed reading exceeds the rated
+    tolerance and requires supervisor sign-off before the valve is returned to service.
+
+4. PRESSURE TOLERANCE TABLE (Unit-2 Valves)
+    Valve V-204 (Gate Valve, Class 300, Line 2-PL-114): Rated tolerance ±0.10 bar
+        against a design set-point of 4.0 bar. Field readings between 3.90 and 4.10 bar
+        are considered acceptable without further action. Readings between 4.10 and
+        4.25 bar are logged as a Deviation Flag requiring supervisor review but do not
+        require immediate isolation. Readings above 4.25 bar require immediate
+        isolation per SOP-089 Section 6.
+    Valve V-207 (Globe Valve, Class 300, Line 2-PL-118): Rated tolerance ±0.15 bar
+        against a design set-point of 6.5 bar.
+    Valve V-211 (Control Valve, Class 600, Line 2-PL-122): Rated tolerance ±0.08 bar
+        against a design set-point of 9.0 bar.
+
+5. PROCEDURE
+5.1 Field technician records the gauge reading during scheduled rounds using the
+    calibrated pressure gauge assigned per SOP-055.
+5.2 Reading is compared against the Pressure Tolerance Table in Section 4.
+5.3 If within rated tolerance, technician initials the inspection card and no further
+    action is required.
+5.4 If a Deviation Flag is raised, the technician notifies the shift supervisor within
+    30 minutes and logs the finding per SOP-089.
+5.5 Deviation Flags on Valve V-204 specifically require cross-verification against the
+    vendor-supplied component history (see SOP-142) before sign-off, since the last two
+    recorded deviations on V-204 were traced to a worn gland packing rather than a
+    genuine set-point drift.
+
+6. REFERENCE STANDARDS
+6.1 ASME B31.3 — Process Piping
+6.2 API 598 — Valve Inspection and Testing
+6.3 Internal: SOP-089 (Inspection & Findings Reporting), SOP-142 (Vendor-Supplied
+    Spare Parts Registration), SOP-055 (Instrument Calibration & Certification)
+
+7. REVISION HISTORY
+Rev 01 (2019): Initial issue.
+Rev 02 (2021): Added Valve V-211 to tolerance table.
+Rev 03 (2023): Tightened V-204 tolerance from ±0.15 bar to ±0.10 bar following root
+    cause review of repeated gland packing failures.
+Rev 04 (2025): Added cross-reference to SOP-142 for V-204 deviation sign-off.

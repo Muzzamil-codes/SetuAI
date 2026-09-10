@@ -32,6 +32,9 @@ def _get_vision_model() -> dict:
     return {"name": "qwen2.5-vl", "endpoint": "http://localhost:11434/v1"}
 
 
+from orchestrator.vision.vlm_client import resolve_image_path
+
+
 async def run_vision_graph(
     task_id: str,
     graph_input: dict,
@@ -46,7 +49,8 @@ async def run_vision_graph(
     Returns (result_dict, trace_events).
     """
     trace_events = []
-    image_path = graph_input.get("image_path", "")
+    raw_path = graph_input.get("image_path", "")
+    image_path = resolve_image_path(raw_path) if raw_path else ""
     prompt = graph_input.get("prompt", "") or graph_input.get("instruction", "Extract all key information from this image")
 
     # 1. Plan
@@ -85,17 +89,11 @@ async def run_vision_graph(
     fields = data.get("fields", data.get("extracted_fields", {}))
     analysis = data.get("response", data.get("raw_response", ""))
 
-    # If tool returned an empty response, try direct VLM call
-    if not analysis and not fields and image_path and os.path.exists(image_path):
-        vision_model = _get_vision_model()
-        analysis = await _llm_vision_response(
-            model_config=vision_model,
-            user_request=prompt,
-            image_path=image_path,
-            cancel_event=cancel_event
-        )
-        if analysis:
-            success = True
+    if isinstance(fields, dict) and not analysis:
+        if "raw_response" in fields:
+            analysis = fields["raw_response"]
+        else:
+            analysis = "\n".join(f"- {k}: {v}" for k, v in fields.items())
 
     # 3. Verification
     if success and (fields or analysis):

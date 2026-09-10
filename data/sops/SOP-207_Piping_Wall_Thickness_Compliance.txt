@@ -1,0 +1,73 @@
+BHARAT REFINERIES LIMITED (BRL) — ENGINEERING & INTEGRITY DIVISION
+STANDARD OPERATING PROCEDURE
+
+SOP Number: SOP-207
+Title: Minimum Wall Thickness Calculation and Compliance Verification for Process Piping
+Revision: 03
+Effective Date: 03-Mar-2024
+Prepared By: A. Fernandes, Piping Integrity Engineer
+Approved By: N. Krishnan, Chief Engineer
+Review Cycle: 36 months
+
+1. PURPOSE
+To establish the mandatory calculation method and acceptance criteria for verifying
+that installed or proposed process piping meets minimum wall thickness requirements
+under internal design pressure, in accordance with ASME B31.3.
+
+2. SCOPE
+Applies to all carbon steel and low-alloy process piping in Unit-1 and Unit-2 operating
+above 10 bar internal pressure. Excludes utility piping (air, water, nitrogen) rated
+below 10 bar, which is covered under SOP-208.
+
+3. CALCULATION METHOD
+3.1 The minimum required wall thickness (t) shall be calculated using the ASME B31.3
+    straight pipe under internal pressure formula:
+
+        t = (P * D) / (2 * (S * E * W + P * Y))
+
+    where:
+        P = internal design pressure (bar, converted to consistent units)
+        D = outside diameter of pipe (mm)
+        S = allowable stress for the pipe material at design temperature (from
+            ASME B31.3 Table A-1)
+        E = quality factor (weld joint efficiency; use 1.0 for seamless pipe)
+        W = weld joint strength reduction factor (use 1.0 unless otherwise specified)
+        Y = coefficient from ASME B31.3 Table 304.1.1, dependent on material and
+            temperature (use 0.4 for ferritic steels below 480°C)
+
+3.2 A corrosion allowance of 1.5 mm shall be added to the calculated minimum thickness
+    for all sour and wet H2S service lines, and 1.0 mm for all other hydrocarbon
+    service lines, per BRL internal corrosion allowance policy CA-02.
+
+3.3 The final required thickness (t_required) is the calculated t plus the applicable
+    corrosion allowance, rounded up to the nearest standard commercial pipe schedule.
+
+4. ACCEPTANCE CRITERIA
+4.1 Installed pipe nominal wall thickness must be equal to or greater than t_required.
+4.2 Any calculation resulting in a t_required that does not correspond to a standard
+    commercial schedule must be escalated to the Chief Engineer for a special-order
+    pipe review before procurement.
+4.3 All wall-thickness calculations submitted for an approval note must show the full
+    formula substitution step-by-step, not just the final result, per BRL documentation
+    policy DOC-11.
+
+5. WORKED REFERENCE EXAMPLE (for training purposes only — not a substitute for a
+   project-specific calculation)
+   For a carbon steel line at 45 bar design pressure, 168.3 mm OD, allowable stress
+   138 MPa, seamless (E=1.0), Y=0.4:
+        t = (45 * 168.3) / (2 * (138 * 1.0 * 1.0 + 45 * 0.4)) ≈ 5.08 mm
+   Adding a 1.0 mm corrosion allowance gives a required thickness of approximately
+   6.08 mm, which would typically map to Schedule 40 or higher depending on the
+   specific pipe size table in use.
+
+6. REFERENCE STANDARDS
+6.1 ASME B31.3 — Process Piping, Chapter II, Part 3 (Pressure Design of Piping
+    Components)
+6.2 Internal: CA-02 (Corrosion Allowance Policy), DOC-11 (Calculation Documentation
+    Policy), SOP-208 (Utility Piping Design Basis)
+
+7. REVISION HISTORY
+Rev 01 (2018): Initial issue.
+Rev 02 (2021): Added sour/wet H2S corrosion allowance distinction.
+Rev 03 (2024): Added mandatory step-by-step disclosure requirement (DOC-11) following
+    an internal audit finding on undocumented calculations.

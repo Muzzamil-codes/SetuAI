@@ -19,7 +19,8 @@ from orchestrator.agent_graph.nodes.tool_call import (
     _call_llm_async,
     _extract_json_from_text,
     _get_cancel_event,
-    _cleanup_cancel_event
+    _cleanup_cancel_event,
+    _try_retrieval
 )
 from orchestrator.agent_graph.subgraphs.codegen_graph import run_codegen_graph
 from orchestrator.agent_graph.subgraphs.drafting_graph import run_drafting_graph
@@ -60,15 +61,20 @@ AVAILABLE SPECIALIST SUB-GRAPHS:
    - Input format: {"expression": "<calculation>", "expected": <numeric value>}
    - Returns: Verification pass/fail status.
 
+5. retrieval:
+   - Purpose: Searches standard operating procedures (SOPs), manuals, equipment records, and engineering guidelines in ChromaDB.
+   - Input format: {"query": "<search query>"}
+   - Returns: Relevant SOP text chunks, sources, and similarity scores.
+
 HOW YOU OPERATE (ReAct Protocol):
 - If the user's message is conversational (greetings, general inquiry, explanations that do not require running code or producing files), respond with:
   {"action": "respond", "thought": "This is conversational."}
-- If the user asks for a technical task (writing code, generating a document/report/notice, analyzing an image, verifying numbers), choose the FIRST required graph and output ONLY a JSON action block:
+- If the user asks for a technical task (writing code, generating a document/report/notice, analyzing an image, verifying numbers, or consulting SOPs/manuals), choose the FIRST required graph and output ONLY a JSON action block:
   ```json
   {
     "thought": "<your reasoning on why this graph is needed first>",
     "action": "run_graph",
-    "graph_name": "<codegen_graph | drafting_graph | visual_extraction_graph | numeric_verify_graph>",
+    "graph_name": "<codegen_graph | drafting_graph | visual_extraction_graph | numeric_verify_graph | retrieval>",
     "graph_input": { ... }
   }
   ```
@@ -139,7 +145,65 @@ def _get_manager_model(task_input: dict) -> dict:
     if manifest:
         return manifest[0]
 
-    return {"name": "deepseek-r1:8b", "endpoint": "http://localhost:11434/v1"}
+def _clean_hallucinated_download_links(text: str, has_artifacts: bool) -> str:
+    """
+    Cleans hallucinated download links, simulated links, or placeholder document announcements.
+    """
+    if not text:
+        return text
+
+    # Remove markdown links pointing to fake/placeholder targets
+    text = re.sub(
+        r'\[([^\]]+)\]\((?:https?://[^\)]*link-to-file[^\)]*|link-to-file|file://[^\)]+)\)',
+        r'\1',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # If NO artifacts were generated, strip out fake 'Official Document Ready' sections and simulated download lines
+    if not has_artifacts:
+        # Remove whole markdown sections about document download
+        text = re.sub(
+            r'###?\s*.*?(?:Official Document|Document Ready|Download the final document|Download the complete document)[\s\S]*?(?=\n###|\n---|\Z)',
+            '',
+            text,
+            flags=re.IGNORECASE
+        )
+
+        clean_lines = []
+        for line in text.splitlines():
+            l_lower = line.lower().strip()
+            # If line mentions simulated link or simulated file
+            if any(k in l_lower for k in ['simulated link', 'simulated file', 'for demonstration; in real use']):
+                continue
+            # If line claims a document was compiled or is ready when no artifacts exist
+            if any(k in l_lower for k in [
+                'download the final document',
+                'download the complete document',
+                'ready for download',
+                'download below',
+                'download your document',
+                'download the document',
+                'download pressuremonitoring',
+                'download final asme',
+                'available as an official document',
+                'already compiled and available',
+                'final action for user'
+            ]):
+                continue
+            if re.match(r'^(?:👉|📎|📌)?\s*\[?(?:📥\s*)?download\b', l_lower):
+                continue
+            clean_lines.append(line)
+        text = '\n'.join(clean_lines)
+
+    # Always clean any leftover simulated link notes even if artifacts exist
+    text = re.sub(r'\(?\s*\*?Note:?\s*This is a simulated (?:link|file path)[^\n\)]*\)?\*?', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'>\s*⚠️?\s*\*?Note:?\s*This is a simulated[^\n]*', '', text, flags=re.IGNORECASE)
+
+    # Clean up excess trailing whitespace/blank lines and orphan horizontal rules
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r'(\n---\s*){2,}', '\n---\n', text)
+    return text.strip()
 
 
 async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
@@ -170,20 +234,45 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
 
     # Setup WebSocket streaming helper
     from backend.gateway.websocket_manager import manager as ws_manager
-    async def stream_chunk_callback(chunk: str):
-        if chunk and not cancel_event.is_set():
-            payload = {
-                "task_id": task_id,
-                "step": "stream_chunk",
-                "payload": {"chunk": chunk},
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-            await ws_manager.broadcast_event(task_id, json.dumps(payload))
+    buffered_stream_tail = ""
+    suppress_stream = False
 
-    # Check if this is an image extraction request from modality
-    image_path = ""
-    if modality in ["image", "file"] and os.path.exists(user_content):
-        image_path = user_content
+    async def stream_chunk_callback(chunk: str):
+        nonlocal buffered_stream_tail, suppress_stream
+        if not chunk or cancel_event.is_set():
+            return
+
+        # If no artifacts were requested/generated, do not stream simulated download sections
+        if not collected_artifacts:
+            buffered_stream_tail += chunk
+            if any(k in buffered_stream_tail.lower() for k in [
+                "download the final document",
+                "simulated link",
+                "link-to-file",
+                "official document ready"
+            ]):
+                suppress_stream = True
+            if suppress_stream:
+                return
+
+        payload = {
+            "task_id": task_id,
+            "step": "stream_chunk",
+            "payload": {"chunk": chunk},
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        await ws_manager.broadcast_event(task_id, json.dumps(payload))
+
+    from orchestrator.vision.vlm_client import resolve_image_path
+
+    # Check if this is an image extraction request from modality or context
+    image_path = resolve_image_path(task_input.get("image_path") or context.get("image_path", ""))
+    if not image_path and modality in ["image", "file"]:
+        cand = resolve_image_path(user_content)
+        if os.path.exists(cand):
+            image_path = cand
+            if context.get("original_instructions"):
+                user_content = context.get("original_instructions")
 
     # ReAct state tracking
     observations: List[Dict[str, Any]] = []
@@ -241,8 +330,9 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
         # Auto-detect intent if LLM was indecisive on step 1
         if step_num == 1 and action != "run_graph":
             lower_req = user_content.lower()
-            needs_doc = any(k in lower_req for k in [".docx", "docx", "word doc", "notice", "letter", "memorandum", ".xlsx", "spreadsheet", "excel", ".pptx", "slides", "presentation"])
-            needs_code = any(k in lower_req for k in ["python code", "write a script", "write code", "code for", "program that"])
+            needs_doc = any(k in lower_req for k in [".docx", "docx", "word doc", "notice", "letter", "memorandum", ".xlsx", "spreadsheet", "excel", ".pptx", "slides", "presentation", "report", "document"])
+            needs_code = any(k in lower_req for k in ["python", "code", "script", "program", "function", "knapsack", "algorithm", "implement"])
+            needs_retrieval = any(k in lower_req for k in ["sop", "sops", "procedure", "tolerance", "valve", "vendor", "manual", "spec", "standard operating", "specification"])
             has_image = bool(image_path or modality in ["image", "file"])
 
             if has_image:
@@ -268,6 +358,11 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
                 graph_name = "drafting_graph"
                 graph_input = {"instruction": user_content, "format": fmt, "doc_type": doc_type}
                 thought = f"Document generation requested. Delegating to drafting_graph for {fmt}."
+            elif needs_retrieval:
+                action = "run_graph"
+                graph_name = "retrieval"
+                graph_input = {"query": user_content}
+                thought = "User inquiry requires SOP knowledge. Executing retrieval in ChromaDB."
 
         # If action is to run a graph
         if action == "run_graph" and graph_name:
@@ -289,11 +384,33 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
             if graph_name == "codegen_graph":
                 sub_res, sub_events = await run_codegen_graph(task_id, graph_input, cancel_event)
             elif graph_name == "drafting_graph":
-                sub_res, sub_events = await run_drafting_graph(task_id, graph_input, cancel_event)
+                sub_res, sub_events = await run_drafting_graph(task_id, graph_input, cancel_event, manager_model=manager_model)
             elif graph_name in ["vision_graph", "visual_extraction_graph"]:
+                req_path = graph_input.get("image_path", "")
+                resolved_req = resolve_image_path(req_path) if req_path else ""
+                if (not resolved_req or not os.path.exists(resolved_req)) and image_path:
+                    graph_input["image_path"] = image_path
                 sub_res, sub_events = await run_vision_graph(task_id, graph_input, cancel_event)
             elif graph_name == "numeric_verify_graph":
                 sub_res, sub_events = await run_numeric_verify_graph(task_id, graph_input, cancel_event)
+            elif graph_name in ["retrieval", "retrieval_graph"]:
+                query = graph_input.get("query") or graph_input.get("instruction") or user_content
+                sub_events.append({
+                    "task_id": task_id,
+                    "step": "tool_call",
+                    "payload": {
+                        "tool_name": "retrieval",
+                        "input_summary": {"query": query[:80]},
+                        "success": True
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                raw_chunks = _try_retrieval(query)
+                sub_res = {
+                    "query": query,
+                    "chunks": raw_chunks,
+                    "count": len(raw_chunks)
+                }
 
             # Yield each event from the sub-graph live to the frontend
             for evt in sub_events:
@@ -310,12 +427,18 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
                 "output": sub_res
             })
 
-            # Check if user requested code AND document and we just finished codegen
+            # Check composite multi-task needs:
+            # 1. Code + Document
+            # 2. Image + SOP knowledge
             lower_req = user_content.lower()
-            wants_both = any(k in lower_req for k in [".docx", "docx", "word doc", "report"]) and \
-                         any(k in lower_req for k in ["python code", "write a script", "write code", "code for"])
+            needs_doc = any(k in lower_req for k in [".docx", "docx", "word doc", "notice", "letter", "memorandum", ".xlsx", "spreadsheet", "excel", ".pptx", "slides", "presentation", "report", "document"])
+            needs_code = any(k in lower_req for k in ["python", "code", "script", "program", "function", "knapsack", "algorithm", "implement"])
+            needs_sop = any(k in lower_req for k in ["sop", "sops", "procedure", "standard operating", "knowledge base"])
+            wants_code_doc = needs_doc and needs_code
+            wants_image_sop = bool(image_path or modality in ["image", "file"]) and needs_sop
+            wants_both = wants_code_doc or wants_image_sop
             
-            if wants_both and graph_name == "codegen_graph" and sub_res.get("code"):
+            if wants_code_doc and graph_name == "codegen_graph" and sub_res.get("code"):
                 # Automatically chain to drafting_graph with verified code
                 code_text = sub_res.get("code", "")
                 test_status = "PASSED" if sub_res.get("passed") else "FAILED"
@@ -340,7 +463,7 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
 
-                doc_res, doc_events = await run_drafting_graph(task_id, chain_input, cancel_event)
+                doc_res, doc_events = await run_drafting_graph(task_id, chain_input, cancel_event, manager_model=manager_model)
                 for evt in doc_events:
                     yield evt
 
@@ -352,6 +475,40 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
                 observations.append({
                     "graph_name": "drafting_graph",
                     "output": doc_res
+                })
+                break
+
+            if wants_image_sop and graph_name in ["vision_graph", "visual_extraction_graph"]:
+                # Automatically chain to retrieval for the SOP query
+                yield {
+                    "task_id": task_id,
+                    "step": "plan",
+                    "payload": {
+                        "plan": "SetuAI Manager: Image extraction complete. Now retrieving relevant SOPs from knowledge base.",
+                        "task_type": "retrieval",
+                        "retry_count": 0
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                raw_chunks = _try_retrieval(user_content)
+                sub_res_ret = {
+                    "query": user_content,
+                    "chunks": raw_chunks,
+                    "count": len(raw_chunks)
+                }
+                yield {
+                    "task_id": task_id,
+                    "step": "tool_call",
+                    "payload": {
+                        "tool_name": "retrieval",
+                        "input_summary": {"query": user_content[:80]},
+                        "success": True
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                observations.append({
+                    "graph_name": "retrieval",
+                    "output": sub_res_ret
                 })
                 break
 
@@ -377,12 +534,115 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
         _cleanup_cancel_event(task_id)
         return
 
+    # Final Safety Check: If user explicitly requested a document file, guarantee it is generated
+    lower_req = user_content.lower()
+    user_wanted_doc = any(k in lower_req for k in [".docx", "docx", "word doc", "notice", "letter", ".xlsx", "spreadsheet", "excel", ".pptx", "presentation", "report"])
+    has_doc_artifact = any(a.get("type") in ["docx", "xlsx", "pptx"] for a in collected_artifacts)
+
+    if user_wanted_doc and not has_doc_artifact and not cancel_event.is_set():
+        fmt = "xlsx" if any(k in lower_req for k in ["xlsx", "spreadsheet", "excel"]) else ("pptx" if any(k in lower_req for k in ["pptx", "presentation"]) else "docx")
+        doc_type = "notice" if "notice" in lower_req else ("letter" if "letter" in lower_req else ("report" if "report" in lower_req else "standard"))
+        
+        doc_data = ""
+        for obs in observations:
+            if obs.get("graph_name") == "codegen_graph":
+                code_snippet = obs.get("output", {}).get("code", "")
+                if code_snippet:
+                    doc_data = f"Verified Python Code Implementation:\n```python\n{code_snippet}\n```"
+                break
+            elif obs.get("graph_name") in ["vision_graph", "visual_extraction_graph"]:
+                v_fields = obs.get("output", {}).get("fields", {})
+                v_analysis = obs.get("output", {}).get("analysis", "")
+                doc_data = f"Extracted Visual Data & Findings:\n{v_analysis}\n\nStructured Specifications:\n{json.dumps(v_fields, indent=2)}"
+                break
+        
+        title_hint = f"Report: {user_content[:60]}" if "report" in lower_req else (f"Notice: {user_content[:60]}" if "notice" in lower_req else user_content[:60])
+        fallback_input = {
+            "instruction": user_content,
+            "format": fmt,
+            "doc_type": doc_type,
+            "title": title_hint,
+            "data": doc_data
+        }
+        yield {
+            "task_id": task_id,
+            "step": "plan",
+            "payload": {
+                "plan": f"SetuAI Manager: Finalizing official {fmt.upper()} document artifact generation.",
+                "task_type": "drafting_graph",
+                "retry_count": 0
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        doc_res, doc_events = await run_drafting_graph(task_id, fallback_input, cancel_event, manager_model=manager_model)
+        for evt in doc_events:
+            yield evt
+        if isinstance(doc_res, dict) and doc_res.get("artifact"):
+            art = doc_res["artifact"]
+            if art not in collected_artifacts:
+                collected_artifacts.append(art)
+        observations.append({
+            "graph_name": "drafting_graph",
+            "output": doc_res
+        })
+
     # Prepare synthesis prompt for the Manager
+    if collected_artifacts:
+        artifact_list = ", ".join([f"`{a.get('filename')}`" for a in collected_artifacts if a.get('filename')])
+        doc_instructions = (
+            f"DOCUMENT DELIVERABLES:\n"
+            f"- The requested document(s) ({artifact_list}) were compiled and are automatically attached to this message.\n"
+            f"- You may briefly inform the user that {artifact_list} is attached below for download.\n"
+            f"- NEVER generate fake markdown URLs, simulated links (e.g. `[Download](...)`, `link-to-file`, `http://localhost...`), or notes about simulated links.\n"
+            f"- NEVER tell the user to copy-paste text into Microsoft Word or manually save a file."
+        )
+    else:
+        doc_instructions = (
+            "DOCUMENT DELIVERABLES:\n"
+            "- NO document, report, or downloadable file was requested or generated for this task.\n"
+            "- CRITICAL: Do NOT mention any downloadable document, report, or file.\n"
+            "- CRITICAL: NEVER output any download links, simulated links, file URLs, or download instructions (e.g. NEVER output `[Download...](...)`, `link-to-file`, or simulated download notes).\n"
+            "- Focus entirely on answering the user's inquiry directly with complete technical detail."
+        )
+
+    has_vision = any(obs.get("graph_name") in ["vision_graph", "visual_extraction_graph"] for obs in observations)
+    has_retrieval = any(obs.get("graph_name") in ["retrieval", "retrieval_graph"] for obs in observations)
+
+    if has_vision and has_retrieval:
+        source_mode_instructions = (
+            "SOURCE MODE: IMAGE_PLUS_KNOWLEDGE\n"
+            "- The user provided an image AND requested SOP / procedure verification.\n"
+            "- Clearly separate extracted visual facts (from the image) from SOP knowledge base procedures/tolerances under distinct headings (e.g. 'Visual Analysis / Extraction' and 'SOP Knowledge & Standards').\n"
+            "- Ground visual findings exclusively in the image visual data, and SOP findings strictly in retrieved SOP evidence.\n"
+            "- Do NOT state 'SOP Aligned: False'."
+        )
+    elif has_vision and not has_retrieval:
+        source_mode_instructions = (
+            "SOURCE MODE: IMAGE_ONLY\n"
+            "- Ground your response strictly and exclusively in the extracted image findings and visual data.\n"
+            "- Do NOT mention standard operating procedures (SOPs), knowledge base, or state 'SOP Aligned: False'.\n"
+            "- Do NOT invent, assume, or force industrial engineering, plant maintenance, safety protocols, constitutional, or legal framing unless explicitly present in the image.\n"
+            "- Faithfully represent the exact contents, structure, and intent of the image."
+        )
+    elif has_retrieval and not has_vision:
+        source_mode_instructions = (
+            "SOURCE MODE: KNOWLEDGE_BASE\n"
+            "- Ground your answer strictly and accurately in the Retrieved SOP Knowledge Base Evidence.\n"
+            "- Cite specific SOP document names, revision numbers, dates, and exact values (e.g. pressure tolerances, vendor names, part numbers) from the evidence.\n"
+            "- If the evidence does not contain specific information requested, state that clearly rather than speculating."
+        )
+    else:
+        source_mode_instructions = ""
+
     synthesis_system = (
-        "You are SetuAI, an elite AI operating system for industrial engineering, plant operations, code generation, and verification. "
-        "Provide a comprehensive, authoritative, beautifully structured final response to the user. "
-        "Present any code in clean Markdown blocks, summarize test verification results, and reference any generated files. "
-        "Speak directly and professionally as SetuAI."
+        "You are SetuAI, an elite AI operating system.\n"
+        "Provide a comprehensive, authoritative, beautifully structured final response to the user.\n"
+        "Present any code in clean Markdown blocks and summarize test verification results clearly.\n\n"
+        f"{source_mode_instructions}\n\n"
+        f"{doc_instructions}\n\n"
+        "RULES:\n"
+        "- Speak directly and professionally as SetuAI.\n"
+        "- Do NOT add meta-commentary about files, downloads, or simulations."
     )
 
     if observations:
@@ -393,11 +653,23 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
             if g_name == "codegen_graph":
                 synthesis_prompt += f"\n- Codegen Result: Sandbox tests {'PASSED' if out.get('passed') else 'FAILED'}.\nCode:\n```python\n{out.get('code', '')}\n```\n"
             elif g_name == "drafting_graph":
-                synthesis_prompt += f"\n- Document Generated: `{out.get('filename')}` (Title: {out.get('title')}, SOP Aligned: {out.get('sop_used')}).\n"
+                sop_info = f", SOP Aligned: {out.get('sop_used')}" if out.get("sop_used") else ""
+                synthesis_prompt += f"\n- Document Generated: `{out.get('filename')}` (Title: {out.get('title')}{sop_info}).\n"
             elif g_name in ["vision_graph", "visual_extraction_graph"]:
                 synthesis_prompt += f"\n- Visual Findings: {out.get('analysis', '')}\nFields: {json.dumps(out.get('fields', {}))}\n"
             elif g_name == "numeric_verify_graph":
                 synthesis_prompt += f"\n- Numeric Check: {'PASSED' if out.get('passed') else 'FAILED'} (Computed: {out.get('computed_value')}, Expected: {out.get('expected')})\n"
+            elif g_name in ["retrieval", "retrieval_graph"]:
+                chunks = out.get("chunks", [])
+                if chunks:
+                    synthesis_prompt += "\n- Retrieved SOP Knowledge Base Evidence:\n"
+                    for idx, ch in enumerate(chunks, 1):
+                        src = ch.get("source", "unknown")
+                        score = ch.get("score", "")
+                        txt = ch.get("text", "").strip()
+                        synthesis_prompt += f"  [Chunk {idx} | Source: {src} | Score: {score}]:\n  {txt}\n"
+                else:
+                    synthesis_prompt += "\n- Retrieved SOP Knowledge Base Evidence: No matching SOP chunks found in ChromaDB.\n"
         synthesis_prompt += "\nSynthesize the complete final answer for the user now:"
     else:
         synthesis_prompt = user_content
@@ -422,6 +694,9 @@ async def run_manager_agent(task_input: dict) -> AsyncGenerator[dict, None]:
         else:
             final_response = "Hello! I am SetuAI, your AI engineering and plant operations assistant. How may I assist you today?"
         await stream_chunk_callback(final_response)
+
+    # Sanitize final response: remove any hallucinated simulated links or fake download sections
+    final_response = _clean_hallucinated_download_links(final_response, has_artifacts=bool(collected_artifacts))
 
     # Emit final 'done' event
     yield {

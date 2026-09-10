@@ -1,0 +1,57 @@
+BHARAT REFINERIES LIMITED (BRL) — QUALITY & DOCUMENTATION DIVISION
+STANDARD OPERATING PROCEDURE
+
+SOP Number: SOP-301
+Title: Approval Note (Note for Approval / NFA) Drafting and Sign-off Procedure
+Revision: 04
+Effective Date: 10-Jun-2025
+Prepared By: K. Menon, Documentation Officer
+Approved By: N. Krishnan, Chief Engineer
+Review Cycle: 24 months
+
+1. PURPOSE
+To standardize the structure and mandatory content of Approval Notes (NFAs) raised
+following inspection findings, vendor evaluations, or engineering calculations
+requiring management sign-off.
+
+2. SCOPE
+Applies to all Approval Notes raised across Unit-1 and Unit-2 for maintenance,
+procurement, and engineering matters.
+
+3. MANDATORY STRUCTURE
+Every Approval Note must contain, in this order:
+    3.1 Header Block — NFA number, date, originating division, equipment tag(s)
+        involved, and classification (Routine / Deviation / Critical) per SOP-089.
+    3.2 Background — a concise statement of what triggered the note (e.g. a specific
+        inspection finding, with reference to the source inspection card date and
+        inspector).
+    3.3 Findings — the specific readings, observations, or calculation results being
+        reported, each traceable to its source (inspection card, calculation
+        worksheet, or vendor document). Any finding that could not be independently
+        verified must be marked "UNVERIFIED" per SOP-089 Section 3.5 and SOP-055
+        Section 4, and must never be presented with the same confidence as a verified
+        finding.
+    3.4 Recommendation — the proposed corrective action or decision being requested.
+    3.5 Approval Block — named designations required to sign off, in sequence: Shift
+        Supervisor, Section Engineer, Head of Process Safety (for Deviation/Critical
+        classifications only).
+
+4. FORMATTING REQUIREMENTS
+4.1 Approval Notes are issued as Word (.docx) documents using the standard BRL NFA
+    template, not as email text or informal memos.
+4.2 Any referenced scanned document (inspection card, vendor certificate) must be
+    embedded as an image crop within the Findings section, not merely described in
+    text, so that the approving authority can visually verify the source.
+4.3 Numeric findings derived from engineering calculations (e.g. under SOP-207) must
+    show the full calculation steps in an appendix, not just the final result.
+
+5. REFERENCE STANDARDS
+5.1 Internal: SOP-089 (Inspection & Findings Reporting), SOP-207 (Wall Thickness
+    Compliance), SOP-055 (Instrument Calibration & Certification), SOP-142 (Vendor
+    Spare Parts Registration)
+
+6. REVISION HISTORY
+Rev 02 (2021): Mandated embedded image crops in place of text descriptions.
+Rev 03 (2023): Added mandatory calculation appendix requirement.
+Rev 04 (2025): Added explicit "UNVERIFIED" marking requirement in Section 3.3,
+    aligned with the corresponding update to SOP-089 and SOP-055.

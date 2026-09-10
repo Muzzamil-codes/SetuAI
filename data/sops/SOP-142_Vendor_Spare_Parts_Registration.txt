@@ -1,0 +1,61 @@
+BHARAT REFINERIES LIMITED (BRL) — MAINTENANCE & PROCUREMENT DIVISION
+STANDARD OPERATING PROCEDURE
+
+SOP Number: SOP-142
+Title: Vendor-Supplied Spare Parts Registration and Traceability
+Revision: 05
+Effective Date: 15-Sep-2024
+Prepared By: M. Solanki, Maintenance Planning Engineer
+Approved By: N. Krishnan, Chief Engineer
+Review Cycle: 24 months
+
+1. PURPOSE
+To ensure every vendor-supplied spare part installed on critical equipment is logged
+with full traceability — vendor, part batch, installation date, and installing
+equipment tag — so that recurring failures can be traced back to a specific supply
+batch during root cause analysis.
+
+2. SCOPE
+Applies to all spare parts sourced from empanelled vendors for use on Unit-1 and
+Unit-2 critical valves, pumps, and instrumentation.
+
+3. REGISTRATION LOG (Unit-2 Valve Components — Extract)
+    Entry 2023-11: Vendor XYZ Engineering Pvt. Ltd. supplied replacement gland packing
+        (Part No. GP-204-B) for Valve V-204, installed 18-Nov-2023 by maintenance crew
+        Shift-B. Installation followed a DEVIATION finding logged under SOP-089 on
+        14-Nov-2023.
+    Entry 2024-06: Vendor XYZ Engineering Pvt. Ltd. supplied a second batch of
+        replacement gland packing (Part No. GP-204-B, Batch 2024-Q2) for Valve V-204,
+        installed 02-Jun-2024, following a repeat DEVIATION finding. Root cause review
+        (RCA-2024-014) attributed the repeat failure to a batch-level material defect
+        in the first supply batch (2023-Q4) rather than a valve set-point issue.
+    Entry 2024-09: Vendor ABC Instrumentation Ltd. supplied a replacement pressure
+        gauge (Part No. PG-11-C) for Valve V-207 monitoring point, installed
+        22-Sep-2024.
+    Entry 2025-02: Vendor XYZ Engineering Pvt. Ltd. supplied a control valve actuator
+        seal kit (Part No. AS-211-K) for Valve V-211, installed 10-Feb-2025.
+
+4. PROCEDURE
+4.1 On receipt of any vendor-supplied spare part, the maintenance planning engineer
+    logs the vendor name, part number, batch number (where applicable), and intended
+    installation location in the Registration Log before the part is released to the
+    maintenance crew.
+4.2 On installation, the maintenance crew confirms the installed part number matches
+    the logged entry and records the actual installation date.
+4.3 Where a component fails within 12 months of installation, the maintenance planning
+    engineer must check the Registration Log for other equipment that received parts
+    from the same vendor batch, and flag them for proactive inspection per SOP-089.
+4.4 Vendors with two or more batch-level defects within a 24-month period are placed
+    under review by the Procurement Committee and may be suspended from the empanelled
+    vendor list pending a corrective action report.
+
+5. REFERENCE STANDARDS
+5.1 Internal: SOP-089 (Inspection & Findings Reporting), SOP-114 (Valve Pressure
+    Tolerance), Procurement Policy PP-07 (Vendor Empanelment and Review)
+
+6. REVISION HISTORY
+Rev 03 (2022): Introduced batch-number tracking requirement.
+Rev 04 (2023): Added Section 4.3 (cross-equipment batch flagging) after a multi-unit
+    gland packing failure traced to a single defective supply batch.
+Rev 05 (2024): Added Section 4.4 (vendor suspension threshold) following the Vendor
+    XYZ repeat failure on Valve V-204.
