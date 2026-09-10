@@ -219,10 +219,15 @@ async def generate_node(state: AgentState) -> dict:
                         "path": result.get("path")
                     }
             elif task_type in ["numeric_verify", "spreadsheet_generation"]:
+                # Carry through LLM-generated tables from doc_data if available
+                doc_data = latest_data.get("doc_data", {})
                 data = {
-                    "title": f"Spreadsheet Report" if task_type == "spreadsheet_generation" else f"Verification Report - {content[:60]}",
-                    "findings": findings if task_type == "spreadsheet_generation" else []
+                    "title": doc_data.get("title", f"Spreadsheet Report" if task_type == "spreadsheet_generation" else f"Verification Report - {content[:60]}"),
+                    "findings": findings if findings else doc_data.get("findings", []),
                 }
+                # Preserve tables so xlsx_builder uses the structured-data branch
+                if doc_data.get("tables"):
+                    data["tables"] = doc_data["tables"]
                 result = generate_xlsx(data, outputs_dir)
                 if result.get("success"):
                     artifact = {

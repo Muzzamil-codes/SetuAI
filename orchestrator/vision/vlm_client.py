@@ -64,10 +64,46 @@ def _get_vision_model() -> dict:
 
 
 async def extract_fields_vlm(image_path: str, user_prompt: str = None, endpoint: str = None) -> dict:
-    """Extracts structured fields from an image using a VLM based on the user's prompt."""
+    """Extracts structured fields from an image (or PDF) using a VLM based on the user's prompt."""
     image_path = resolve_image_path(image_path)
     if not image_path or not os.path.exists(image_path):
         raise FileNotFoundError(f"Image not found at path: {image_path}")
+
+    # --- PDF handling: render pages to images, process each, merge results ---
+    from orchestrator.vision.pdf_renderer import is_pdf
+    if is_pdf(image_path):
+        from orchestrator.vision.pdf_renderer import render_pdf_pages
+        page_images = render_pdf_pages(image_path)
+        if not page_images:
+            raise ValueError(f"PDF rendered zero page images: {image_path}")
+
+        merged: dict = {}
+        for i, page_img in enumerate(page_images):
+            page_prompt = user_prompt
+            if len(page_images) > 1:
+                # Tell the VLM which page it's looking at
+                page_note = f"(This is page {i + 1} of {len(page_images)} from a PDF document.) "
+                page_prompt = page_note + (user_prompt or "")
+            page_result = await extract_fields_vlm(page_img, page_prompt, endpoint)
+            if isinstance(page_result, dict):
+                if len(page_images) == 1:
+                    merged = page_result
+                else:
+                    # Prefix keys with page number to avoid collisions
+                    for k, v in page_result.items():
+                        if k == "raw_response":
+                            prev = merged.get("raw_response", "")
+                            merged["raw_response"] = (prev + f"\n\n--- Page {i + 1} ---\n" + v).strip()
+                        else:
+                            merged[f"page_{i + 1}_{k}"] = v
+
+        # Clean up temporary rendered images
+        import shutil
+        if page_images:
+            tmp_dir = os.path.dirname(page_images[0])
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return merged if merged else {"raw_response": "No content extracted from PDF pages."}
 
     model_info = _get_vision_model()
 
@@ -127,7 +163,7 @@ async def extract_fields_vlm(image_path: str, user_prompt: str = None, endpoint:
     else:
         print(f"  - Gen Limit (max_tokens): {payload['max_tokens']}")
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:
         response = await client.post(url, json=payload)
         response.raise_for_status()
         result = response.json()

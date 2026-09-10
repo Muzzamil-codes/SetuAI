@@ -1,0 +1,5 @@
+{
+    "provider": "default",
+    "model_name": "k----n/jina-embeddings-v4-text-retrieval-F16:latest",
+    "endpoint": "http://localhost:11434/v1"
+}

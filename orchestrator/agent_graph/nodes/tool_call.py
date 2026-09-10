@@ -668,12 +668,33 @@ Output ONLY a valid JSON object matching the `pptx` schema. No chat preamble.
 
     parsed = _extract_json_from_text(raw_response)
     if not parsed:
-        doc_type = "notice" if "notice" in user_request.lower() else "standard"
-        parsed = {
-            "title": user_request[:60],
-            "doc_type": doc_type,
-            "body_content": raw_response.strip() or f"Official document regarding {user_request}."
-        }
+        if tool_name == "xlsx":
+            # Wrap raw LLM text into a single-table structure so xlsx_builder
+            # takes the tables branch instead of the empty dashboard fallback.
+            lines = [l.strip() for l in (raw_response or "").strip().splitlines() if l.strip()]
+            if lines:
+                parsed = {
+                    "title": user_request[:60],
+                    "tables": [{
+                        "name": "Data",
+                        "headers": ["Content"],
+                        "rows": [[line] for line in lines]
+                    }]
+                }
+            else:
+                parsed = {"title": user_request[:60]}
+        elif tool_name == "pptx":
+            parsed = {
+                "title": user_request[:60],
+                "slides": [{"title": user_request[:60], "bullets": [raw_response.strip() or user_request]}]
+            }
+        else:
+            doc_type = "notice" if "notice" in user_request.lower() else "standard"
+            parsed = {
+                "title": user_request[:60],
+                "doc_type": doc_type,
+                "body_content": raw_response.strip() or f"Official document regarding {user_request}."
+            }
     return parsed
 
 
@@ -693,7 +714,30 @@ async def _llm_vision_response(model_config: dict, user_request: str, image_path
     import asyncio
     import urllib.request
     import re
-    
+
+    # --- PDF handling: render pages to images, process each page ---
+    from orchestrator.vision.pdf_renderer import is_pdf
+    if is_pdf(image_path):
+        from orchestrator.vision.pdf_renderer import render_pdf_pages
+        import shutil
+        page_images = render_pdf_pages(image_path)
+        if not page_images:
+            return "Error: PDF rendered zero page images."
+        results = []
+        for i, page_img in enumerate(page_images):
+            page_request = user_request or ""
+            if len(page_images) > 1:
+                page_request = f"(Page {i + 1} of {len(page_images)} from a PDF document.) " + page_request
+            # Only stream on the last page to avoid interleaving
+            cb = stream_callback if i == len(page_images) - 1 else None
+            page_text = await _llm_vision_response(model_config, page_request, page_img, chat_history, cb, cancel_event)
+            if page_text:
+                results.append(f"--- Page {i + 1} ---\n{page_text}" if len(page_images) > 1 else page_text)
+        # Clean up temp images
+        if page_images:
+            shutil.rmtree(os.path.dirname(page_images[0]), ignore_errors=True)
+        return "\n\n".join(results) if results else "No content extracted from PDF pages."
+
     endpoint = model_config.get("endpoint", "http://localhost:11434/v1")
     model_name = model_config.get("name", "qwen2.5-vl")
     
